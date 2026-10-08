@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -8,8 +9,6 @@ using System.Collections.Generic;
 
 namespace StandaloneDisplay
 {
-    public enum ResizeHandle { None, NorthWest, North, NorthEast, East, SouthEast, South, SouthWest, West }
-
     public sealed class SceneRenderer : IDisposable
     {
         public const int CanvasWidth = 480;
@@ -33,7 +32,7 @@ namespace StandaloneDisplay
             }
         }
 
-        public Bitmap Render(SceneDocument scene, TelemetrySnapshot snapshot, SceneElement selected, bool showSelection)
+        public Bitmap Render(SceneDocument scene, TelemetrySnapshot snapshot)
         {
             Bitmap frame = new Bitmap(CanvasWidth, CanvasHeight, PixelFormat.Format32bppArgb);
             FormulaContext context = FormulaContext.FromSnapshot(snapshot);
@@ -44,7 +43,6 @@ namespace StandaloneDisplay
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
                 foreach (SceneElement element in scene.Elements) DrawElement(graphics, element, context);
-                if (showSelection && selected != null) DrawSelection(graphics, selected.Bounds);
             }
             return frame;
         }
@@ -200,49 +198,6 @@ namespace StandaloneDisplay
                 font.Dispose();
             }
             return new Font(FontFamily.GenericSansSerif, pixels, style, GraphicsUnit.Pixel);
-        }
-
-        private static void DrawSelection(Graphics graphics, Rectangle bounds)
-        {
-            using (Pen pen = new Pen(Color.FromArgb(255, 230, 190, 0), 1))
-            {
-                pen.DashStyle = DashStyle.Dash;
-                graphics.DrawRectangle(pen, bounds);
-            }
-            foreach (Rectangle handle in GetHandleRectangles(bounds))
-            {
-                graphics.FillRectangle(Brushes.White, handle);
-                graphics.DrawRectangle(Pens.Black, handle);
-            }
-        }
-
-        public static ResizeHandle HitTestHandle(Rectangle bounds, Point point)
-        {
-            Rectangle[] handles = GetHandleRectangles(bounds);
-            ResizeHandle[] values = { ResizeHandle.NorthWest, ResizeHandle.North, ResizeHandle.NorthEast, ResizeHandle.East,
-                ResizeHandle.SouthEast, ResizeHandle.South, ResizeHandle.SouthWest, ResizeHandle.West };
-            for (int index = 0; index < handles.Length; index++)
-            {
-                Rectangle area = handles[index];
-                area.Inflate(3, 3);
-                if (area.Contains(point)) return values[index];
-            }
-            return ResizeHandle.None;
-        }
-
-        private static Rectangle[] GetHandleRectangles(Rectangle bounds)
-        {
-            const int size = 6;
-            int half = size / 2;
-            int middleX = bounds.Left + bounds.Width / 2;
-            int middleY = bounds.Top + bounds.Height / 2;
-            return new[]
-            {
-                new Rectangle(bounds.Left-half,bounds.Top-half,size,size), new Rectangle(middleX-half,bounds.Top-half,size,size),
-                new Rectangle(bounds.Right-half,bounds.Top-half,size,size), new Rectangle(bounds.Right-half,middleY-half,size,size),
-                new Rectangle(bounds.Right-half,bounds.Bottom-half,size,size), new Rectangle(middleX-half,bounds.Bottom-half,size,size),
-                new Rectangle(bounds.Left-half,bounds.Bottom-half,size,size), new Rectangle(bounds.Left-half,middleY-half,size,size)
-            };
         }
 
         public void Dispose() { background.Dispose(); }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -26,6 +27,7 @@ namespace StandaloneDisplay
         private readonly Label status;
         private readonly Label help;
         private readonly ComboBox previewScaleBox;
+        private readonly NumericUpDown refreshIntervalBox;
         private readonly TabControl editorTabs;
         private readonly TextBox layoutNameBox;
         private readonly Label layoutPathLabel;
@@ -120,6 +122,14 @@ namespace StandaloneDisplay
             Button refresh = ButtonAt("Refresh", 200, 514, 82, delegate { RefreshData(); });
             Button savePng = ButtonAt("Save PNG", 288, 514, 90, delegate { SavePng(); });
 
+            Label refreshIntervalLabel = new Label { Text = "更新(秒)", Location = new Point(390, 520), Size = new Size(62, 22) };
+            refreshIntervalBox = new NumericUpDown
+            {
+                Location = new Point(454, 516), Width = 72, DecimalPlaces = 2,
+                Increment = 0.25m, Minimum = 0.25m, Maximum = 60m, Value = 1m
+            };
+            refreshIntervalBox.ValueChanged += delegate { timer.Interval = (int)(refreshIntervalBox.Value * 1000m); };
+
             help = new Label
             {
                 Location = new Point(16, 558), Size = new Size(1026, 38),
@@ -136,6 +146,7 @@ namespace StandaloneDisplay
             Controls.Add(widthBox); Controls.Add(heightBox); Controls.Add(fontBox); Controls.Add(alignmentBox);
             Controls.Add(formulaBox); Controls.Add(placeholderBox); Controls.Add(insert); Controls.Add(formulaResult);
             Controls.Add(dataMode); Controls.Add(refresh); Controls.Add(savePng);
+            Controls.Add(refreshIntervalLabel); Controls.Add(refreshIntervalBox);
             Controls.Add(previewScaleLabel); Controls.Add(previewScaleBox); Controls.Add(help); Controls.Add(status);
 
             editorTabs = new TabControl { Location = new Point(rightPanelX, 16), Size = new Size(296, 536), Tag = "RightProperty" };
@@ -199,6 +210,7 @@ namespace StandaloneDisplay
             Controls.Add(editorTabs);
 
             bottomToolbar.Add(dataMode); bottomToolbar.Add(refresh); bottomToolbar.Add(savePng);
+            bottomToolbar.Add(refreshIntervalLabel); bottomToolbar.Add(refreshIntervalBox);
             bottomToolbar.Add(previewScaleLabel); bottomToolbar.Add(previewScaleBox);
             previewScaleBox.SelectedIndexChanged += delegate { ApplyPreviewScale(); };
             previewScaleBox.SelectedItem = "1.0x";
@@ -206,7 +218,10 @@ namespace StandaloneDisplay
             KeyDown += DesignerKeyDown;
             FormClosing += DesignerFormClosing;
             timer = new Timer { Interval = 1000, Enabled = true };
-            timer.Tick += delegate { if (!dragging && !formulaBox.Focused) RefreshData(); };
+            timer.Tick += delegate
+            {
+                if (WindowState != FormWindowState.Minimized && !dragging && !formulaBox.Focused) RefreshData();
+            };
             ReloadElementList(null);
             UpdateLayoutUi();
             Shown += delegate { RefreshData(); };
@@ -421,7 +436,7 @@ namespace StandaloneDisplay
         {
             if (args.Button != MouseButtons.Left) return;
             Point point = ToLogical(args.Location);
-            resizeHandle = selected == null ? ResizeHandle.None : SceneRenderer.HitTestHandle(selected.Bounds, point);
+            resizeHandle = selected == null ? ResizeHandle.None : SelectionAdorner.HitTest(selected.Bounds, point);
             if (resizeHandle == ResizeHandle.None)
             {
                 SceneElement hit = scene.HitTest(point);
@@ -443,7 +458,7 @@ namespace StandaloneDisplay
             Point point = ToLogical(args.Location);
             if (!dragging || selected == null)
             {
-                ResizeHandle hover = selected == null ? ResizeHandle.None : SceneRenderer.HitTestHandle(selected.Bounds, point);
+                ResizeHandle hover = selected == null ? ResizeHandle.None : SelectionAdorner.HitTest(selected.Bounds, point);
                 canvas.Cursor = CursorFor(hover);
                 return;
             }
@@ -564,7 +579,8 @@ namespace StandaloneDisplay
         private void RenderCanvas()
         {
             if (snapshot == null) return;
-            Bitmap next = renderer.Render(scene, snapshot, selected, true);
+            Bitmap next = renderer.Render(scene, snapshot);
+            if (selected != null) SelectionAdorner.Draw(next, selected.Bounds);
             Image old = canvas.Image; canvas.Image = next; if (old != null) old.Dispose();
             if (selected != null)
             {
@@ -802,7 +818,7 @@ namespace StandaloneDisplay
             if (snapshot == null) return;
             using (SaveFileDialog dialog = new SaveFileDialog { Filter = "PNG image|*.png", FileName = "display-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png" })
                 if (dialog.ShowDialog(this) == DialogResult.OK)
-                    using (Bitmap image = renderer.Render(scene, snapshot, null, false)) image.Save(dialog.FileName, ImageFormat.Png);
+                    using (Bitmap image = renderer.Render(scene, snapshot)) image.Save(dialog.FileName, ImageFormat.Png);
         }
 
         protected override void Dispose(bool disposing)

@@ -1,6 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 using System;
 using System.Collections.Generic;
-using System.Drawing;
 
 namespace StandaloneDisplay
 {
@@ -22,7 +22,8 @@ namespace StandaloneDisplay
         public override string ToString() { return DisplayName + " (" + PortName + ")"; }
     }
     public interface IDisplayDiscovery { IList<DisplayDevice> FindDevices(); }
-    public interface IDisplaySession : IDisposable { DisplayDevice Device { get; } void SendFrame(Bitmap frame); }
+    // The RGB565 payload is read-only and is shared between targets in one update.
+    public interface IDisplaySession : IDisposable { DisplayDevice Device { get; } void SendFrame(byte[] rgb565); }
     public interface IDisplaySessionFactory { IDisplaySession Connect(DisplayDevice device); }
 
     public sealed class DisplaySendResult
@@ -30,23 +31,9 @@ namespace StandaloneDisplay
         public DisplayDevice Device { get; private set; }
         public Exception Error { get; private set; }
         public bool Succeeded { get { return Error == null; } }
-        public DisplaySendResult(DisplayDevice device, Exception error) { Device = device; Error = error; }
+        public bool Skipped { get; private set; }
+        public DisplaySendResult(DisplayDevice device, Exception error) : this(device, error, false) { }
+        public DisplaySendResult(DisplayDevice device, Exception error, bool skipped) { Device = device; Error = error; Skipped = skipped; }
     }
 
-    public sealed class MultiDisplaySender
-    {
-        private readonly IDisplaySessionFactory factory;
-        public MultiDisplaySender(IDisplaySessionFactory factory) { this.factory = factory; }
-        public IList<DisplaySendResult> Send(Bitmap frame, IEnumerable<DisplayDevice> targets)
-        {
-            if (frame == null) throw new ArgumentNullException("frame");
-            List<DisplaySendResult> results = new List<DisplaySendResult>();
-            foreach (DisplayDevice target in targets)
-            {
-                try { using (IDisplaySession session = factory.Connect(target)) session.SendFrame(frame); results.Add(new DisplaySendResult(target, null)); }
-                catch (Exception error) { results.Add(new DisplaySendResult(target, error)); }
-            }
-            return results;
-        }
-    }
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 using System;
 using System.Diagnostics;
 using System.Globalization;
@@ -6,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Management;
 using System.Net.NetworkInformation;
+using System.Threading.Tasks;
 
 namespace StandaloneDisplay
 {
@@ -14,7 +16,16 @@ namespace StandaloneDisplay
         private readonly PerformanceCounter cpuCounter;
         private readonly Dictionary<string, PerformanceCounter> cpuCoreCounters = new Dictionary<string, PerformanceCounter>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<string, PerformanceCounter> gpuEngineCounters = new Dictionary<string, PerformanceCounter>(StringComparer.OrdinalIgnoreCase);
-        private DateTime lastGpuCounterRefresh;
+        private readonly Stopwatch monotonicClock = Stopwatch.StartNew();
+        private long lastGpuCounterRefreshMilliseconds = -5000;
+        private long lastHeavyRefreshMilliseconds = -5000;
+        private long cachedTotalMb;
+        private long cachedUsedMb;
+        private double cachedGpuLoad;
+        private double? cachedGpuTemperature;
+        private double? cachedCpuTemperature;
+        private double cachedDiskUsedPercent;
+        private Dictionary<string, object> cachedSensorValues = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         private DateTime previousNetworkTime;
         private long previousBytesSent;
         private long previousBytesReceived;
@@ -24,8 +35,16 @@ namespace StandaloneDisplay
 
         public WindowsTelemetryProvider()
         {
-            cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total", true);
-            try { cpuCounter.NextValue(); } catch { }
+            try
+            {
+                cpuCounter = new PerformanceCounter("Processor", "% Processor Time", "_Total", true);
+                cpuCounter.NextValue();
+            }
+            catch
+            {
+                if (cpuCounter != null) cpuCounter.Dispose();
+                cpuCounter = null;
+            }
             InitializeCpuCoreCounters();
         }
 
@@ -33,17 +52,13 @@ namespace StandaloneDisplay
         {
             DateTime now = DateTime.Now;
             double cpu = ReadCpu();
-            long totalMb;
-            long usedMb;
-            ReadMemory(out totalMb, out usedMb);
-            double ramPercent = totalMb > 0 ? usedMb * 100.0 / totalMb : 0;
+            RefreshHeavyValues();
+            double ramPercent = cachedTotalMb > 0 ? cachedUsedMb * 100.0 / cachedTotalMb : 0;
             double upload;
             double download;
             ReadNetwork(now, out upload, out download);
-            double gpuLoad;
-            double? gpuTemp;
-            ReadNvidia(out gpuLoad, out gpuTemp);
-            Dictionary<string, object> additionalValues = ReadLibreHardwareSensors();
+            double gpuLoad = cachedGpuLoad;
+            Dictionary<string, object> additionalValues = new Dictionary<string, object>(cachedSensorValues, StringComparer.OrdinalIgnoreCase);
             ReadCpuCoreValues(additionalValues);
             double gpuEngineMaximum = ReadGpuEngineValues(additionalValues);
             if (gpuLoad <= 0 && gpuEngineMaximum > 0) gpuLoad = gpuEngineMaximum;
@@ -52,18 +67,43 @@ namespace StandaloneDisplay
             {
                 Timestamp = now,
                 CpuLoadPercent = cpu,
-                CpuTemperatureC = ReadCpuTemperature(),
+                CpuTemperatureC = cachedCpuTemperature,
                 GpuLoadPercent = gpuLoad,
-                GpuTemperatureC = gpuTemp,
+                GpuTemperatureC = cachedGpuTemperature,
                 RamLoadPercent = Clamp(ramPercent),
-                RamUsedMb = usedMb,
+                RamUsedMb = cachedUsedMb,
                 VolumePercent = ReadVolume(),
                 UploadMbps = upload,
                 DownloadMbps = download,
-                DiskUsedPercent = ReadDiskUsedPercent(),
+                DiskUsedPercent = cachedDiskUsedPercent,
                 SourceDescription = "ACTUAL / Windows + optional NVIDIA/LHM sensors",
                 AdditionalValues = additionalValues
             };
+        }
+
+        private void RefreshHeavyValues()
+        {
+            long elapsed = monotonicClock.ElapsedMilliseconds;
+            if (elapsed - lastHeavyRefreshMilliseconds < 5000) return;
+            lastHeavyRefreshMilliseconds = elapsed;
+
+            long totalMb;
+            long usedMb;
+            ReadMemory(out totalMb, out usedMb);
+            double gpuLoad;
+            double? gpuTemperature;
+            ReadNvidia(out gpuLoad, out gpuTemperature);
+            Dictionary<string, object> sensorValues = ReadLibreHardwareSensors();
+            double? cpuTemperature = ReadCpuTemperature();
+            double diskUsedPercent = ReadDiskUsedPercent();
+
+            cachedTotalMb = totalMb;
+            cachedUsedMb = usedMb;
+            cachedGpuLoad = gpuLoad;
+            cachedGpuTemperature = gpuTemperature;
+            cachedSensorValues = sensorValues;
+            cachedCpuTemperature = cpuTemperature;
+            cachedDiskUsedPercent = diskUsedPercent;
         }
 
         private void InitializeCpuCoreCounters()
@@ -128,9 +168,9 @@ namespace StandaloneDisplay
 
         private void RefreshGpuEngineCounters()
         {
-            DateTime now = DateTime.UtcNow;
-            if (gpuEngineCounters.Count > 0 && (now - lastGpuCounterRefresh).TotalSeconds < 5) return;
-            lastGpuCounterRefresh = now;
+            long elapsed = monotonicClock.ElapsedMilliseconds;
+            if (elapsed - lastGpuCounterRefreshMilliseconds < 5000) return;
+            lastGpuCounterRefreshMilliseconds = elapsed;
             try
             {
                 PerformanceCounterCategory category = new PerformanceCounterCategory("GPU Engine");
@@ -199,8 +239,10 @@ namespace StandaloneDisplay
                 ManagementScope scope = new ManagementScope(namespacePath);
                 using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(scope,
                     new ObjectQuery("SELECT Identifier,Name,Value FROM Sensor")))
+                using (ManagementObjectCollection results = searcher.Get())
                 {
-                    foreach (ManagementObject item in searcher.Get())
+                    foreach (ManagementObject item in results)
+                    using (item)
                     {
                         string identifier = Convert.ToString(item["Identifier"], CultureInfo.InvariantCulture);
                         string name = Convert.ToString(item["Name"], CultureInfo.InvariantCulture);
@@ -215,6 +257,7 @@ namespace StandaloneDisplay
 
         private double ReadCpu()
         {
+            if (cpuCounter == null) return 0;
             try { return Clamp(cpuCounter.NextValue()); }
             catch { return 0; }
         }
@@ -226,8 +269,10 @@ namespace StandaloneDisplay
             try
             {
                 using (ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT TotalVisibleMemorySize,FreePhysicalMemory FROM Win32_OperatingSystem"))
+                using (ManagementObjectCollection results = searcher.Get())
                 {
-                    foreach (ManagementObject item in searcher.Get())
+                    foreach (ManagementObject item in results)
+                    using (item)
                     {
                         long totalKb = Convert.ToInt64(item["TotalVisibleMemorySize"], CultureInfo.InvariantCulture);
                         long freeKb = Convert.ToInt64(item["FreePhysicalMemory"], CultureInfo.InvariantCulture);
@@ -286,8 +331,20 @@ namespace StandaloneDisplay
                 };
                 using (Process process = Process.Start(start))
                 {
-                    string line = process.StandardOutput.ReadLine();
-                    process.WaitForExit(1500);
+                    if (process == null) return;
+                    Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+                    if (!process.WaitForExit(1500))
+                    {
+                        try { process.Kill(); }
+                        catch { }
+                        try { process.WaitForExit(500); }
+                        catch { }
+                        return;
+                    }
+                    if (!outputTask.Wait(500)) return;
+                    string output = outputTask.Result;
+                    string line = null;
+                    using (StringReader reader = new StringReader(output)) line = reader.ReadLine();
                     if (!String.IsNullOrWhiteSpace(line))
                     {
                         string[] parts = line.Split(',');
@@ -310,8 +367,10 @@ namespace StandaloneDisplay
             {
                 ManagementScope scope = new ManagementScope("root\\WMI");
                 using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(scope, new ObjectQuery("SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature")))
+                using (ManagementObjectCollection results = searcher.Get())
                 {
-                    foreach (ManagementObject item in searcher.Get())
+                    foreach (ManagementObject item in results)
+                    using (item)
                     {
                         double kelvinTenths = Convert.ToDouble(item["CurrentTemperature"], CultureInfo.InvariantCulture);
                         double celsius = kelvinTenths / 10.0 - 273.15;
@@ -329,8 +388,10 @@ namespace StandaloneDisplay
             {
                 ManagementScope scope = new ManagementScope(scopePath);
                 using (ManagementObjectSearcher searcher = new ManagementObjectSearcher(scope, new ObjectQuery(query)))
+                using (ManagementObjectCollection results = searcher.Get())
                 {
-                    foreach (ManagementObject item in searcher.Get()) return Convert.ToDouble(item["Value"], CultureInfo.InvariantCulture);
+                    foreach (ManagementObject item in results)
+                    using (item) return Convert.ToDouble(item["Value"], CultureInfo.InvariantCulture);
                 }
             }
             catch { }
@@ -360,7 +421,7 @@ namespace StandaloneDisplay
 
         public void Dispose()
         {
-            cpuCounter.Dispose();
+            if (cpuCounter != null) cpuCounter.Dispose();
             foreach (PerformanceCounter counter in cpuCoreCounters.Values) counter.Dispose();
             foreach (PerformanceCounter counter in gpuEngineCounters.Values) counter.Dispose();
         }
