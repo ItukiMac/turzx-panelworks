@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     internal static class OfflineTests
     {
@@ -18,9 +18,62 @@ namespace StandaloneDisplay
         private static int Main(string[] args)
         {
             if (args.Length == 1 && args[0] == "--benchmark") return BenchmarkEncoding();
-            FormulaAndScene(); Rendering(); Encoding(); RefreshOptionBounds(); RefreshOptionRoundTrip(); SharedTelemetryLifetime(); RuntimeBehavior(); TargetSpecificFrames(); FaultCleanup(); BusyAndClose();
+            FormulaAndScene(); Rendering(); Encoding(); RotationBehavior(); RefreshOptionBounds(); RefreshOptionRoundTrip(); SharedTelemetryLifetime(); RuntimeBehavior(); TargetSpecificFrames(); FaultCleanup(); BusyAndClose();
             Console.WriteLine(failures == 0 ? "PASS: offline test suite" : "FAILURES: " + failures);
             return failures == 0 ? 0 : 1;
+        }
+
+        private static void RotationBehavior()
+        {
+            using (Bitmap frame = new Bitmap(480, 320))
+            {
+                using (Graphics g = Graphics.FromImage(frame))
+                {
+                    g.FillRectangle(Brushes.Red, 0, 0, 240, 160);
+                    g.FillRectangle(Brushes.Lime, 240, 0, 240, 160);
+                    g.FillRectangle(Brushes.Blue, 0, 160, 240, 160);
+                    g.FillRectangle(Brushes.White, 240, 160, 240, 160);
+                }
+                Color[][] expected = {
+                    new[] { Color.Red, Color.Lime, Color.Blue, Color.White },
+                    new[] { Color.Blue, Color.Red, Color.White, Color.Lime },
+                    new[] { Color.White, Color.Blue, Color.Lime, Color.Red },
+                    new[] { Color.Lime, Color.White, Color.Red, Color.Blue }
+                };
+                int[] angles = { 0, 90, 180, 270 };
+                for (int i = 0; i < angles.Length; i++)
+                    using (Bitmap rotated = FrameRotation.Apply(frame, angles[i]))
+                    {
+                        Check(rotated.Width == 480 && rotated.Height == 320, "rotation keeps output size");
+                        int left = i % 2 == 0 ? 60 : 180, right = i % 2 == 0 ? 420 : 300;
+                        Color[] actual = { rotated.GetPixel(left, 60), rotated.GetPixel(right, 60), rotated.GetPixel(left, 260), rotated.GetPixel(right, 260) };
+                        for (int j = 0; j < 4; j++) Check(actual[j].ToArgb() == expected[i][j].ToArgb(), "clockwise quadrant mapping " + angles[i]);
+                        if (i % 2 != 0) Check(rotated.GetPixel(0, 160).ToArgb() == Color.Black.ToArgb(), "portrait output letterboxed");
+                    }
+                Check(frame.GetPixel(0, 0).ToArgb() == Color.Red.ToArgb(), "rotation preserves source");
+                Check(ThrowsOutOfRange(delegate { using (Bitmap ignored = FrameRotation.Apply(frame, 45)) { } }), "invalid rotation rejected");
+            }
+            FakeFrameSourceFactory sources = new FakeFrameSourceFactory();
+            FakeFactory sessions = new FakeFactory();
+            DisplayDevice a = Device("rotation-a"), b = Device("rotation-b");
+            using (DisplayUpdateCoordinator runtime = new DisplayUpdateCoordinator(sources, sessions, "red-layout", null))
+            {
+                // Rotated target first exercises late encoding of the shared unrotated frame.
+                DisplayTarget[] targets = { new DisplayTarget(a, "red-layout", null, 90), new DisplayTarget(b, "red-layout", null) };
+                using (UpdateResult result = Await(runtime.RefreshTargetsAsync(targets)))
+                {
+                    Check(AllSucceeded(result.Devices, 2), "mixed rotations send");
+                    Check(result.Preview.GetPixel(0, 0).ToArgb() == Color.Black.ToArgb(), "preview matches rotated target");
+                    Check(sessions.FirstPixel("rotation-a") == 0 && sessions.FirstPixel("rotation-b") == 0xF800, "per-target rotation reaches transport");
+                }
+                Check(sources.TotalCaptures == 1, "mixed rotations share one source capture");
+                using (UpdateResult result = Await(runtime.RefreshTargetsAsync(targets)))
+                    Check(result.Devices[0].Skipped && result.Devices[1].Skipped, "unchanged rotated frames skipped");
+                using (UpdateResult result = Await(runtime.RefreshTargetsAsync(new[] { new DisplayTarget(a, "red-layout", null), targets[1] })))
+                    Check(!result.Devices[0].Skipped && result.Devices[1].Skipped, "rotation change retransmits only changed output");
+            }
+            Check(ThrowsOutOfRange(delegate { new DisplayTarget(a, null, null, -90); }), "target validates rotation");
+            Check(ThrowsOutOfRange(delegate { new DisplayAssignment().RotationDegrees = 45; }), "settings validate rotation");
         }
 
         private static int BenchmarkEncoding()
@@ -83,7 +136,7 @@ namespace StandaloneDisplay
         private static void Rendering()
         {
             string directory = AppDomain.CurrentDomain.BaseDirectory;
-            System.Reflection.Assembly editor = System.Reflection.Assembly.ReflectionOnlyLoadFrom(Path.Combine(directory, "StandaloneDisplay.Editor.exe"));
+            System.Reflection.Assembly editor = System.Reflection.Assembly.ReflectionOnlyLoadFrom(Path.Combine(directory, "TurzxPanelWorks.Editor.exe"));
             foreach (System.Reflection.AssemblyName reference in editor.GetReferencedAssemblies())
                 Check(reference.Name.IndexOf("Transport", StringComparison.OrdinalIgnoreCase) < 0 && reference.Name.IndexOf("Runtime", StringComparison.OrdinalIgnoreCase) < 0, "editor assembly excludes transport/runtime");
             foreach (System.Reflection.AssemblyName reference in typeof(SceneRenderer).Assembly.GetReferencedAssemblies())
@@ -141,10 +194,14 @@ namespace StandaloneDisplay
             try
             {
                 RefreshOptions saved = new RefreshOptions { IntervalMilliseconds = 2750 };
-                saved.Assignments.Add(new DisplayAssignment { StableId = "display-one", ScenePath = "layouts/one.scene.xml", BackgroundPath = "backgrounds/one.png" });
+                saved.Assignments.Add(new DisplayAssignment { StableId = "display-one", ScenePath = "layouts/one.scene.xml", BackgroundPath = "backgrounds/one.png", RotationDegrees = 270 });
                 saved.Assignments.Add(new DisplayAssignment { StableId = "display-two", ScenePath = "layouts/two.scene.xml", BackgroundPath = null });
                 saved.Save(path); RefreshOptions loaded = RefreshOptions.Load(path);
                 Check(loaded.IntervalMilliseconds == 2750 && loaded.Assignments.Count == 2, "refresh options interval and assignment count round trip");
+                Check(loaded.Assignments[0].RotationDegrees == 270 && loaded.Assignments[1].RotationDegrees == 0, "rotation settings round trip");
+                string legacy = File.ReadAllText(path).Replace("<RotationDegrees>270</RotationDegrees>", "").Replace("<RotationDegrees>0</RotationDegrees>", "");
+                File.WriteAllText(path, legacy);
+                Check(RefreshOptions.Load(path).Assignments[0].RotationDegrees == 0, "old settings default to zero rotation");
                 Check(loaded.Assignments[0].StableId == "display-one" && loaded.Assignments[0].ScenePath == "layouts/one.scene.xml" && loaded.Assignments[0].BackgroundPath == "backgrounds/one.png", "refresh assignment fields round trip");
                 Check(loaded.Assignments[1].StableId == "display-two" && loaded.Assignments[1].ScenePath == "layouts/two.scene.xml" && loaded.Assignments[1].BackgroundPath == null, "refresh assignment null background round trip");
             }

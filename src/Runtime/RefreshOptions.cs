@@ -5,13 +5,23 @@ using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class DisplayAssignment
     {
         public string StableId { get; set; }
         public string ScenePath { get; set; }
         public string BackgroundPath { get; set; }
+        private int rotationDegrees;
+        public int RotationDegrees
+        {
+            get { return rotationDegrees; }
+            set
+            {
+                if (value != 0 && value != 90 && value != 180 && value != 270) throw new ArgumentOutOfRangeException("value");
+                rotationDegrees = value;
+            }
+        }
     }
 
     public sealed class RefreshOptions

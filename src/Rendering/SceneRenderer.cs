@@ -7,7 +7,7 @@ using System.Drawing.Text;
 using System.IO;
 using System.Collections.Generic;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class SceneRenderer : IDisposable
     {

@@ -18,3 +18,8 @@ logs/
 !.env.example
 *.local.scene.xml
 layouts/local/
+
+# Local coordination and release audit evidence (never publish)
+/handoffs/
+/work/
+/outputs/

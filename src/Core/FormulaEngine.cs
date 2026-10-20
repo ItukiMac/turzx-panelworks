@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class FormulaContext
     {

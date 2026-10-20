@@ -3,7 +3,7 @@ using System;
 using System.Drawing;
 using System.IO;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public interface IFrameSource : IDisposable { Bitmap Capture(); }
 

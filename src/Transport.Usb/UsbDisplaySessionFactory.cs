@@ -9,7 +9,7 @@ using System.Management;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class UsbDisplaySessionFactory : IDisplaySessionFactory
     {

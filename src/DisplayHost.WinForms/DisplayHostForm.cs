@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class DisplayHostForm : Form
     {
@@ -16,14 +16,16 @@ namespace StandaloneDisplay
         private readonly IDisplayDiscovery discovery = new UsbDisplayDiscovery();
         private readonly DataGridView devices = new DataGridView();
         private readonly PictureBox preview = new PictureBox();
-        private readonly Label status = new Label();
+        private readonly TextBox status = new TextBox { Multiline = true, ReadOnly = true, BorderStyle = BorderStyle.None, ScrollBars = ScrollBars.Vertical, TabStop = false };
         private readonly NumericUpDown interval = new NumericUpDown();
         private readonly Button scan = new Button(), once = new Button(), start = new Button(), stop = new Button();
         private readonly Timer timer = new Timer();
+        private readonly NotifyIcon tray = new NotifyIcon();
+        private readonly ContextMenuStrip trayMenu = new ContextMenuStrip();
         private readonly RefreshOptions options;
         private DisplayUpdateCoordinator runtime;
         private Task pendingUi = Task.FromResult(0);
-        private bool busy, running, closing, readyToClose;
+        private bool busy, running, closing, readyToClose, inTray;
 
         public DisplayHostForm(string scenePath, string backgroundPath)
         {
@@ -31,8 +33,26 @@ namespace StandaloneDisplay
             this.backgroundPath = backgroundPath;
             try { options = RefreshOptions.Load(settingsPath); }
             catch { options = new RefreshOptions(); }
-            Text = "Standalone Display Host";
-            ClientSize = new Size(1180, 560);
+            Text = "TURZX PanelWorks Host";
+            Icon = AppLifetime.LoadIcon(typeof(DisplayHostForm).Assembly);
+            ClientSize = new Size(1180, 444);
+            tray.Icon = Icon;
+            tray.Text = "TURZX PanelWorks Host";
+            tray.ContextMenuStrip = trayMenu;
+            trayMenu.Items.Add("開く", null, delegate { RestoreFromTray(); });
+            trayMenu.Items.Add("終了", null, delegate { if (!closing) Close(); });
+            tray.DoubleClick += delegate { RestoreFromTray(); };
+            Resize += delegate
+            {
+                if (WindowState == FormWindowState.Minimized && !closing && !inTray)
+                {
+                    inTray = true;
+                    ShowInTaskbar = false;
+                    Hide();
+                    tray.Visible = true;
+                }
+            };
+            VisibleChanged += delegate { if (Visible && inTray) { inTray = false; tray.Visible = false; } };
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
@@ -50,9 +70,12 @@ namespace StandaloneDisplay
             devices.Columns.Add(new DataGridViewTextBoxColumn { Name = "Port", HeaderText = "機器", ReadOnly = true, FillWeight = 60 });
             devices.Columns.Add(new DataGridViewTextBoxColumn { Name = "Scene", HeaderText = "レイアウト", ReadOnly = true, FillWeight = 160 });
             devices.Columns.Add(new DataGridViewTextBoxColumn { Name = "Background", HeaderText = "背景", ReadOnly = true, FillWeight = 120 });
+            DataGridViewComboBoxColumn rotation = new DataGridViewComboBoxColumn { Name = "Rotation", HeaderText = "回転(°)", FillWeight = 75, ValueType = typeof(int) };
+            rotation.Items.AddRange(0, 90, 180, 270);
+            devices.Columns.Add(rotation);
             devices.CurrentCellDirtyStateChanged += delegate { if (devices.IsCurrentCellDirty) devices.CommitEdit(DataGridViewDataErrorContexts.Commit); };
             devices.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs args)
-            { if (args.RowIndex >= 0 && args.ColumnIndex >= 2) ChooseFile(args.ColumnIndex == 3); };
+            { if (args.RowIndex >= 0 && (args.ColumnIndex == 2 || args.ColumnIndex == 3)) ChooseFile(args.ColumnIndex == 3); };
             Button chooseScene = new Button(), chooseBackground = new Button(), clearBackground = new Button();
             SetupButton(chooseScene, "レイアウト選択", 632, 244);
             SetupButton(chooseBackground, "背景選択", 764, 244);
@@ -60,7 +83,7 @@ namespace StandaloneDisplay
             chooseScene.Click += delegate { ChooseFile(false); };
             chooseBackground.Click += delegate { ChooseFile(true); };
             clearBackground.Click += delegate { if (!running && !busy && devices.CurrentRow != null) SetPath(devices.CurrentRow, 3, null); };
-            Label hint = new Label { Text = "行を選び、モニタごとにレイアウトと背景を割り当てます。", Left = 632, Top = 282, Width = 532 };
+            Label hint = new Label { Text = "行を選び、レイアウト・背景・時計回りの回転角を指定します。", Left = 632, Top = 282, Width = 532 };
             Controls.Add(hint);
             Label caption = new Label { Text = "更新間隔（完了後の待機秒）", Left = 632, Top = 314, Width = 260 };
             interval.SetBounds(896, 310, 120, 28);
@@ -78,7 +101,7 @@ namespace StandaloneDisplay
             once.Click += async delegate { await RunUiAsync(UpdateAsync); };
             start.Click += async delegate { running = true; await RunUiAsync(UpdateAsync); };
             stop.Click += async delegate { await StopAsync(); };
-            status.SetBounds(632, 390, 532, 152);
+            status.SetBounds(632, 390, 532, 38);
             status.Text = "読み込み中";
             Controls.Add(preview); Controls.Add(devices); Controls.Add(caption); Controls.Add(interval); Controls.Add(status);
             timer.Interval = options.IntervalMilliseconds;
@@ -86,7 +109,7 @@ namespace StandaloneDisplay
             {
                 timer.Stop();
                 if (!running || closing) return;
-                if (WindowState == FormWindowState.Minimized && SelectedTargets().Count == 0) { ArmTimer(); return; }
+                if ((inTray || WindowState == FormWindowState.Minimized) && SelectedTargets().Count == 0) { ArmTimer(); return; }
                 await RunUiAsync(UpdateAsync);
             };
             Shown += async delegate { await RunUiAsync(InitializeAsync); };
@@ -97,6 +120,23 @@ namespace StandaloneDisplay
         private void SetupButton(Button button, string label, int x, int y)
         {
             button.Text = label; button.SetBounds(x, y, 124, 30); Controls.Add(button);
+        }
+
+        private void RestoreFromTray()
+        {
+            if (!closing) AppLifetime.Restore(this);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                tray.Visible = false;
+                tray.Dispose();
+                trayMenu.Dispose();
+                timer.Dispose();
+            }
+            base.Dispose(disposing);
         }
 
         private async Task InitializeAsync()
@@ -164,7 +204,7 @@ namespace StandaloneDisplay
             foreach (DisplayDevice device in found)
             {
                 DisplayAssignment saved = options.Assignments.Find(delegate(DisplayAssignment value) { return String.Equals(value.StableId, device.StableId, StringComparison.OrdinalIgnoreCase); });
-                int index = devices.Rows.Add(selected.Contains(device.StableId), device.PortName, "", "");
+                int index = devices.Rows.Add(selected.Contains(device.StableId), device.PortName, "", "", saved == null ? 0 : saved.RotationDegrees);
                 DataGridViewRow row = devices.Rows[index];
                 row.Tag = device;
                 SetPath(row, 2, saved == null ? scenePath : saved.ScenePath);
@@ -252,7 +292,7 @@ namespace StandaloneDisplay
             List<DisplayTarget> selected = new List<DisplayTarget>();
             foreach (DataGridViewRow row in devices.Rows)
                 if (Convert.ToBoolean(row.Cells[0].Value))
-                    selected.Add(new DisplayTarget((DisplayDevice)row.Tag, (string)row.Cells[2].Tag, (string)row.Cells[3].Tag));
+                    selected.Add(new DisplayTarget((DisplayDevice)row.Tag, (string)row.Cells[2].Tag, (string)row.Cells[3].Tag, Convert.ToInt32(row.Cells[4].Value)));
             return selected;
         }
 
@@ -263,7 +303,7 @@ namespace StandaloneDisplay
             {
                 string id = ((DisplayDevice)row.Tag).StableId;
                 options.Assignments.RemoveAll(delegate(DisplayAssignment assignment) { return String.Equals(assignment.StableId, id, StringComparison.OrdinalIgnoreCase); });
-                options.Assignments.Add(new DisplayAssignment { StableId = id, ScenePath = (string)row.Cells[2].Tag, BackgroundPath = (string)row.Cells[3].Tag });
+                options.Assignments.Add(new DisplayAssignment { StableId = id, ScenePath = (string)row.Cells[2].Tag, BackgroundPath = (string)row.Cells[3].Tag, RotationDegrees = Convert.ToInt32(row.Cells[4].Value) });
             }
         }
     }

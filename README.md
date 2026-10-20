@@ -1,4 +1,6 @@
-# Standalone Display
+# TURZX PanelWorks
+
+TURZX製ディスプレイ向けの非公式・独立開発ツールです。メーカーによる公式提供、公認、提携を示すものではありません。Editorで画面を編集し、Hostで継続表示を管理します。
 
 Windowsでダッシュボードを編集し、複数のRev A USBモニタへそれぞれ異なる画面を表示するアプリケーションです。
 
@@ -16,8 +18,8 @@ Windows、.NET Framework 4.8、PowerShell 5.1以降を使用します。配布�
 ## 画面を編集する
 
 ```powershell
-.\bin\StandaloneDisplay.Editor.exe layout-a.xml
-.\bin\StandaloneDisplay.Editor.exe layout-b.xml
+.\bin\TurzxPanelWorks.Editor.exe layout-a.xml
+.\bin\TurzxPanelWorks.Editor.exe layout-b.xml
 ```
 
 Text、Bar、Graph、Rectangleを編集し、モニタごとのレイアウトを別のXMLに保存します。Editorのプレビュー更新間隔は0.25〜60秒で設定でき、最小化中は自動プレビュー更新を休止します。EditorにはUSB送信機能はありません。
@@ -25,15 +27,17 @@ Text、Bar、Graph、Rectangleを編集し、モニタごとのレイアウト�
 ## モニタごとに割り当てる
 
 ```powershell
-.\bin\StandaloneDisplay.Host.exe layout-a.xml
+.\bin\TurzxPanelWorks.Host.exe layout-a.xml
 ```
 
 1. 「機器一覧」で接続済みモニタを列挙します。
 2. 行を選んで「レイアウト選択」「背景選択」から、そのモニタのXMLと任意の画像を指定します。背景未指定なら無地になります。
-3. 送信する行にチェックを付けます。例：モニタAにCPU/RAM画面、モニタBに時計/ネットワーク画面を割り当てられます。
+3. 「回転(°)」列で時計回りの0・90・180・270度を選び、送信する行にチェックを付けます。例：モニタAにCPU/RAM画面、モニタBに時計/ネットワーク画面を割り当てられます。
 4. 「1回更新」または「更新開始」を押します。「停止・切断」で更新と接続を終了します。
 
-先頭の送信対象を左側にプレビューします。対象なしではプレビューだけを更新します。開始中の割当変更は停止後に行ってください。機器の個体IDを再照合して接続するため、COM番号だけを基準に別の機器へ送信しません。
+回転はモニタごとに保存され、次回起動時に復元されます。旧設定の既定値は0度です。回転は背景を含む描画画像全体へ適用します。USB出力は480×320固定のため、90・270度では縦横比を維持して縮小し、左右に黒い余白を付けます（縦画面用レイアウトへの自動再配置や機器の方向設定変更は行いません）。角度変更は「停止・切断」後に行ってください。
+
+先頭の送信対象を左側に回転後の状態でプレビューします。対象なしではプレビューだけを更新します。開始中の割当変更は停止後に行ってください。機器の個体IDを再照合して接続するため、COM番号だけを基準に別の機器へ送信しません。
 
 更新間隔は **0.25〜60秒、既定1秒**。1周期の処理完了後に指定時間待機します。転送が遅くても更新を重ねず、実際の周期は処理時間＋待機時間です。
 
@@ -52,7 +56,7 @@ Hostの間隔と機器別XML/背景割当は、ユーザーのローカルアプ
 任意の画素変換ベンチマークは次で実行できます。結果は変換部分だけの比較で、アプリ全体やUSB速度の保証ではありません。
 
 ```powershell
-.\bin\StandaloneDisplay.OfflineTests.exe --benchmark
+.\bin\TurzxPanelWorks.OfflineTests.exe --benchmark
 ```
 
 ## 構成と制約
@@ -72,3 +76,15 @@ Editor、Rendering、Runtime、Telemetry、Transportを分離しています。�
 ## 開発への参加
 
 [CONTRIBUTING.md](CONTRIBUTING.md) と [SECURITY.md](SECURITY.md) を参照してください。ログ、実機ID、ユーザー名、端末名、絶対作業パスや秘密情報をコミットしないでください。
+
+## 名称変更と既存設定
+
+旧名称はStandalone Displayです。実行ファイル名はTurzxPanelWorks.Editor.exe／TurzxPanelWorks.Host.exeに変更しました。既存設定を引き継ぐため、ローカル設定の保存先フォルダー名StandaloneDisplayは維持しています。対応範囲はRev A・480×320であり、TURZXシリーズ全機種への対応を意味しません。
+
+## ウィンドウと常駐動作
+
+EditorとHostには専用のアプリアイコンを設定しています。Hostを最小化するとタスクトレイへ格納され、更新中の表示処理は継続します。トレイアイコンのダブルクリック、または右クリックメニューの「開く」で復帰します。「終了」またはウィンドウの閉じるボタンは、実行中の更新終了を待って接続を閉じ、設定を保存して終了します。
+
+同じWindowsユーザー・セッションではEditorとHostをそれぞれ1つだけ起動できます。再起動操作は既存の画面を復帰させ、新しいプロセスは終了します。EditorとHostの同時利用は可能です。二重起動時のファイル引数は既存画面へ適用しません。レイアウトの切替は既存画面から行ってください。
+
+アイコンは独自の図形から生成しています。再生成する場合は tools/Generate-Icons.ps1 を実行してください。

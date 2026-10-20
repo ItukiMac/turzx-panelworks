@@ -3,7 +3,7 @@ using System;
 using System.IO;
 using System.Windows.Forms;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     internal static class DisplayHostProgram
     {
@@ -14,7 +14,7 @@ namespace StandaloneDisplay
             string background = args.Length > 1 ? Path.GetFullPath(args[1]) : null;
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new DisplayHostForm(scene, background));
+            AppLifetime.Run("Host", delegate { return new DisplayHostForm(scene, background); });
         }
     }
 }

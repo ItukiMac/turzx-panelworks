@@ -2,7 +2,7 @@
 using System.Drawing;
 using System.Drawing.Drawing2D;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     internal enum ResizeHandle { None, NorthWest, North, NorthEast, East, SouthEast, South, SouthWest, West }
 

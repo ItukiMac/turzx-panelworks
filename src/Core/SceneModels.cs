@@ -6,7 +6,7 @@ using System.IO;
 using System.Xml;
 using System.Xml.Serialization;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public enum SceneElementKind { Text, Bar, Graph, Rectangle }
 

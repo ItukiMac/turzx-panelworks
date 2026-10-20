@@ -12,7 +12,7 @@ using System.Management;
 using System.Text.RegularExpressions;
 using System.Threading;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     internal sealed class UsbDisplaySession : IDisplaySession
     {

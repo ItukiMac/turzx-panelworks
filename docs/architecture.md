@@ -33,3 +33,7 @@ DisplayTargetは機器、シーンXML、背景を対応付けます。1周期で
 ## Verification
 
 通常のVerifyでは偽機器と固定画像を使い、異なる内容の振り分け、グループ共有、同一画面省略、負stride変換、機器障害の隔離、停止/終了時の寿命を検証します。UI smokeではフォームの構築と描画だけを行い、ライブ計測・USB列挙を開始しません。
+
+## Host rotation
+
+DisplayTarget / DisplayAssignment carry a validated clockwise RotationDegrees (0/90/180/270, default 0). FrameRotation rotates the full image and fits it into the original frame dimensions with black padding. The coordinator captures each scene/background once per cycle and caches transformed frames by rotation. Preview and RGB565 output use the same transformed image. The USB protocol remains unchanged.

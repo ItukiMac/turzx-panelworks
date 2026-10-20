@@ -2,7 +2,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class TelemetrySnapshot
     {

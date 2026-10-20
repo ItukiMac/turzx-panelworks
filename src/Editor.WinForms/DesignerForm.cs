@@ -6,7 +6,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Windows.Forms;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class DesignerForm : Form
     {
@@ -54,7 +54,8 @@ namespace StandaloneDisplay
             renderer = new SceneRenderer(backgroundPath);
             provider = new DummyTelemetryProvider();
 
-            Text = "Standalone Display Designer";
+            Text = "TURZX PanelWorks Editor";
+            Icon = AppLifetime.LoadIcon(typeof(DesignerForm).Assembly);
             ClientSize = new Size(1060, 690);
             FormBorderStyle = FormBorderStyle.FixedSingle;
             MaximizeBox = false;
@@ -275,17 +276,20 @@ namespace StandaloneDisplay
                 rightPanelX = nextRightPanelX;
             }
 
-            int toolbarMinimum = previewScaleBox.Right >= rightPanelX ? 568 : 516;
-            int toolbarTop = Math.Max(toolbarMinimum, canvas.Bottom + 20);
+            int toolbarTop = Math.Max(canvas.Bottom, editorTabs.Bottom) + 8;
             foreach (Control control in bottomToolbar)
             {
                 int offset = control == dataMode || control == previewScaleBox ? 0 : 2;
                 control.Top = toolbarTop + offset;
             }
-            help.Top = toolbarTop + 42;
-            status.Top = help.Bottom + 10;
+            help.Top = toolbarTop + 34;
+            help.Height = 24;
+            status.Top = help.Bottom + 4;
             int requiredWidth = Math.Max(editorTabs.Right + 18, previewScaleBox.Right + 18);
-            ClientSize = new Size(requiredWidth, status.Bottom + 20);
+            help.Width = requiredWidth - help.Left - 16;
+            help.AutoEllipsis = true;
+            status.Width = requiredWidth - status.Left - 16;
+            ClientSize = new Size(requiredWidth, status.Bottom + 8);
             RenderCanvas();
         }
 
@@ -627,7 +631,7 @@ namespace StandaloneDisplay
         private void UpdateWindowTitle()
         {
             string name = String.IsNullOrWhiteSpace(scene.Name) ? "Untitled" : scene.Name.Trim();
-            Text = "Standalone Display Designer — " + name + (isDirty ? " *" : String.Empty);
+            Text = "TURZX PanelWorks Editor — " + name + (isDirty ? " *" : String.Empty);
         }
 
         private void UpdateLayoutUi()

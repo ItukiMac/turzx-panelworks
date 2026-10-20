@@ -5,7 +5,7 @@ using System.Drawing;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class UpdateResult : IDisposable
     {
@@ -86,10 +86,11 @@ namespace StandaloneDisplay
             }
         }
 
-        private string GroupKey(string scene, string background)
+        private string GroupKey(string scene, string background, int rotation = 0)
         {
-            if (singleSource != null) return "single";
-            return Path.GetFullPath(scene ?? defaultScene) + "\n" + (String.IsNullOrEmpty(background) ? "" : Path.GetFullPath(background));
+            string suffix = rotation == 0 ? "" : "\nrotation=" + rotation;
+            if (singleSource != null) return "single" + suffix;
+            return Path.GetFullPath(scene ?? defaultScene) + "\n" + (String.IsNullOrEmpty(background) ? "" : Path.GetFullPath(background)) + suffix;
         }
         private UpdateResult Refresh(List<DisplayTarget> selected)
         {
@@ -97,12 +98,11 @@ namespace StandaloneDisplay
             try
             {
                 if (sourceFactory != null) sourceFactory.BeginCycle();
-                string firstKey = selected.Count == 0 ? GroupKey(defaultScene, defaultBackground) : GroupKey(selected[0].ScenePath, selected[0].BackgroundPath);
+                string firstKey = selected.Count == 0 ? GroupKey(defaultScene, defaultBackground) : GroupKey(selected[0].ScenePath, selected[0].BackgroundPath, selected[0].RotationDegrees);
                 if (selected.Count == 0) Capture(frames, firstKey, defaultScene, defaultBackground, false);
                 foreach (DisplayTarget target in selected)
                 {
-                    string key = GroupKey(target.ScenePath, target.BackgroundPath);
-                    FrameGroup group = Capture(frames, key, target.ScenePath, target.BackgroundPath, true);
+                    FrameGroup group = CaptureTarget(frames, target);
                     if (group.Image.Width != target.Device.Width || group.Image.Height != target.Device.Height)
                         throw new ArgumentException("Frame dimensions do not match the selected display.");
                 }
@@ -129,7 +129,7 @@ namespace StandaloneDisplay
                 bool[] unchangedFrames = new bool[selected.Count];
                 for (int i = 0; i < selected.Count; i++)
                 {
-                    FrameGroup group = frames[GroupKey(selected[i].ScenePath, selected[i].BackgroundPath)];
+                    FrameGroup group = frames[GroupKey(selected[i].ScenePath, selected[i].BackgroundPath, selected[i].RotationDegrees)];
                     byte[] previous = currentStates[i].LastSuccessfulFrame;
                     bool same = false;
                     if (previous != null && !group.Comparisons.TryGetValue(previous, out same))
@@ -143,7 +143,7 @@ namespace StandaloneDisplay
                 {
                     DisplayTarget target = selected[index];
                     TargetState state = currentStates[index];
-                    byte[] pixels = frames[GroupKey(target.ScenePath, target.BackgroundPath)].Pixels;
+                    byte[] pixels = frames[GroupKey(target.ScenePath, target.BackgroundPath, target.RotationDegrees)].Pixels;
                     if (state.Error != null) { results[index] = new DisplaySendResult(target.Device, state.Error); return; }
                     bool unchanged = unchangedFrames[index];
                     try
@@ -175,10 +175,28 @@ namespace StandaloneDisplay
             finally { foreach (FrameGroup group in frames.Values) group.Dispose(); }
         }
 
+        private FrameGroup CaptureTarget(Dictionary<string, FrameGroup> frames, DisplayTarget target)
+        {
+            string baseKey = GroupKey(target.ScenePath, target.BackgroundPath);
+            FrameGroup original = Capture(frames, baseKey, target.ScenePath, target.BackgroundPath, target.RotationDegrees == 0);
+            if (target.RotationDegrees == 0) return original;
+            string key = GroupKey(target.ScenePath, target.BackgroundPath, target.RotationDegrees);
+            FrameGroup rotated;
+            if (frames.TryGetValue(key, out rotated)) return rotated;
+            rotated = new FrameGroup { Image = FrameRotation.Apply(original.Image, target.RotationDegrees) };
+            frames.Add(key, rotated);
+            rotated.Pixels = Rgb565Encoder.Encode(rotated.Image);
+            return rotated;
+        }
+
         private FrameGroup Capture(Dictionary<string, FrameGroup> frames, string key, string scene, string background, bool encode)
         {
             FrameGroup existing;
-            if (frames.TryGetValue(key, out existing)) return existing;
+            if (frames.TryGetValue(key, out existing))
+            {
+                if (encode && existing.Pixels == null) existing.Pixels = Rgb565Encoder.Encode(existing.Image);
+                return existing;
+            }
             IFrameSource source = singleSource;
             bool created = false;
             if (source == null && !sources.TryGetValue(key, out source))

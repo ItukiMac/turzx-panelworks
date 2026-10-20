@@ -9,7 +9,7 @@ using System.Management;
 using System.Net.NetworkInformation;
 using System.Threading.Tasks;
 
-namespace StandaloneDisplay
+namespace TurzxPanelWorks
 {
     public sealed class WindowsTelemetryProvider : ITelemetryProvider
     {
