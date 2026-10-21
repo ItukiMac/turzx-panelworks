@@ -12,15 +12,17 @@ namespace TurzxPanelWorks
         private readonly string scenePath;
         private readonly SceneRenderer renderer;
         private readonly ITelemetryProvider telemetry;
+        private readonly RefreshOptions timing;
         private SceneDocument scene;
         private DateTime writeTime;
         private long length;
 
-        public SceneFrameSource(string scenePath, SceneRenderer renderer, ITelemetryProvider telemetry)
+        public SceneFrameSource(string scenePath, SceneRenderer renderer, ITelemetryProvider telemetry, RefreshOptions timing = null)
         {
             this.scenePath = scenePath;
             this.renderer = renderer;
             this.telemetry = telemetry;
+            this.timing = timing;
         }
 
         public Bitmap Capture()
@@ -36,7 +38,8 @@ namespace TurzxPanelWorks
                 writeTime = currentTime;
                 length = currentLength;
             }
-            return renderer.Render(scene, telemetry.Capture());
+            TelemetrySnapshot snapshot = telemetry.Capture();
+            return timing == null ? renderer.Render(scene, snapshot) : renderer.Render(HostParameters.Apply(scene, timing.ResolveParameter), snapshot, DateTime.Now);
         }
 
         public void Dispose() { try { renderer.Dispose(); } finally { telemetry.Dispose(); } }

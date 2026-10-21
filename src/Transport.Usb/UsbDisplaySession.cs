@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Rev A behavior adapted from turing-smart-screen-python.
 // Copyright (C) 2021 Matthieu Houdebine and contributors.
-// Modified for persistent C# display sessions, 2026-10-08. See THIRD_PARTY_NOTICES.md.
+// Modified for persistent C# display sessions, 2026-10-08. See docs/THIRD_PARTY_NOTICES.md.
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;

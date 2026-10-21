@@ -86,6 +86,33 @@ namespace TurzxPanelWorks
             }
         }
 
+        public Task<UpdateResult> PreviewAsync(string scene, string background, int rotation, IList<DisplayTarget> contentTargets = null)
+        {
+            lock (gate)
+            {
+                if (closing || (active != null && !active.IsCompleted) || (maintenance != null && !maintenance.IsCompleted))
+                    return Task.FromResult<UpdateResult>(null);
+                active = Task.Run(delegate
+                {
+                    Dictionary<string, FrameGroup> frames = new Dictionary<string, FrameGroup>();
+                    try
+                    {
+                        if (sourceFactory != null) sourceFactory.BeginCycle();
+                        FrameGroup frame = Capture(frames, GroupKey(scene, background), scene, background, false);
+                        // Keep enabled layouts' content current even when USB sends are infrequent.
+                        if (contentTargets != null)
+                            foreach (DisplayTarget target in contentTargets)
+                                Capture(frames, GroupKey(target.ScenePath, target.BackgroundPath), target.ScenePath, target.BackgroundPath, false);
+                        Bitmap image = FrameRotation.Apply(frame.Image, rotation);
+                        if (rotation != 0) image.RotateFlip(rotation == 90 ? RotateFlipType.Rotate270FlipNone : rotation == 180 ? RotateFlipType.Rotate180FlipNone : RotateFlipType.Rotate90FlipNone);
+                        return new UpdateResult(image, new List<DisplaySendResult>());
+                    }
+                    finally { foreach (FrameGroup frame in frames.Values) frame.Dispose(); }
+                });
+                return active;
+            }
+        }
+
         private string GroupKey(string scene, string background, int rotation = 0)
         {
             string suffix = rotation == 0 ? "" : "\nrotation=" + rotation;
@@ -168,6 +195,12 @@ namespace TurzxPanelWorks
                     }
                 });
                 Bitmap preview = frames[firstKey].Image;
+                // Present the screen upright, as viewed after physically rotating the display.
+                // RGB565 bytes were already encoded and keep the requested output rotation.
+                int previewRotation = selected.Count == 0 ? 0 : selected[0].RotationDegrees;
+                if (previewRotation != 0)
+                    preview.RotateFlip(previewRotation == 90 ? RotateFlipType.Rotate270FlipNone :
+                        previewRotation == 180 ? RotateFlipType.Rotate180FlipNone : RotateFlipType.Rotate90FlipNone);
                 frames[firstKey].Image = null;
                 return new UpdateResult(preview, results);
             }

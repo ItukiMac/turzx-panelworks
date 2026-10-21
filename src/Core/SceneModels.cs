@@ -8,7 +8,7 @@ using System.Xml.Serialization;
 
 namespace TurzxPanelWorks
 {
-    public enum SceneElementKind { Text, Bar, Graph, Rectangle }
+    public enum SceneElementKind { Text, Bar, Graph, Rectangle, Calendar, Weather, Website, News, Market }
 
     public sealed class SceneElement
     {
@@ -26,6 +26,20 @@ namespace TurzxPanelWorks
         public int FillColorArgb { get; set; }
         public int BackColorArgb { get; set; }
         public string Alignment { get; set; }
+        public string SourceUrl { get; set; }
+        public string MarketSymbol { get; set; }
+        public string LocationName { get; set; }
+        public double Latitude { get; set; }
+        public double Longitude { get; set; }
+        public int RefreshMinutes { get; set; }
+        public int ViewportWidth { get; set; }
+        public int SlideSeconds { get; set; }
+        public SceneElement()
+        {
+            LocationName = "東京"; Latitude = 35.681; Longitude = 139.767;
+            RefreshMinutes = 10; ViewportWidth = 480; SlideSeconds = 10;
+        }
+
         public string VerticalAlignment { get; set; }
 
         [XmlIgnore]
@@ -39,9 +53,11 @@ namespace TurzxPanelWorks
                 X = X + 8, Y = Y + 8, Width = Width, Height = Height, Formula = Formula,
                 FontSize = FontSize, Bold = Bold, ForeColorArgb = ForeColorArgb,
                 FillColorArgb = FillColorArgb, BackColorArgb = BackColorArgb, Alignment = Alignment,
-                VerticalAlignment = VerticalAlignment
+                VerticalAlignment = VerticalAlignment, SourceUrl = SourceUrl, MarketSymbol = MarketSymbol, LocationName = LocationName,
+                Latitude = Latitude, Longitude = Longitude, RefreshMinutes = RefreshMinutes, ViewportWidth = ViewportWidth, SlideSeconds = SlideSeconds
             };
         }
+        public SceneElement Copy() { return (SceneElement)MemberwiseClone(); }
 
         public override string ToString() { return Name + "  [" + Kind + "]"; }
     }
@@ -50,13 +66,18 @@ namespace TurzxPanelWorks
     public sealed class SceneDocument
     {
         public int Version { get; set; }
+        public int QuickLayout { get; set; }
+        public List<string> QuickMetrics { get; set; }
         public string Name { get; set; }
         [XmlArray("Elements"), XmlArrayItem("Element")]
         public List<SceneElement> Elements { get; set; }
+        [XmlArray("HostParameters"), XmlArrayItem("Parameter")]
+        public List<HostParameter> HostParameters { get; set; }
 
         public SceneDocument()
         {
             Version = 2;
+            QuickLayout = -1;
             Name = "Untitled";
             Elements = new List<SceneElement>();
         }
@@ -76,6 +97,8 @@ namespace TurzxPanelWorks
 
         public void Save(string path)
         {
+            if (HostParameters == null) HostParameters = TurzxPanelWorks.HostParameters.Infer(this);
+            TurzxPanelWorks.HostParameters.Validate(HostParameters);
             string directory = Path.GetDirectoryName(Path.GetFullPath(path));
             if (!Directory.Exists(directory)) Directory.CreateDirectory(directory);
             XmlSerializer serializer = new XmlSerializer(typeof(SceneDocument));
@@ -99,37 +122,23 @@ namespace TurzxPanelWorks
             XmlReaderSettings settings = new XmlReaderSettings { DtdProcessing = DtdProcessing.Prohibit, XmlResolver = null };
             using (XmlReader reader = XmlReader.Create(path, settings))
             {
-                SceneDocument scene = serializer.Deserialize(reader) as SceneDocument;
+                XmlDocument xml = new XmlDocument { XmlResolver = null };
+                try { xml.Load(reader); }
+                catch (XmlException error) { throw new InvalidOperationException("レイアウトXMLの形式が不正です。", error); }
+                SceneDocument scene;
+                using (XmlNodeReader documentReader = new XmlNodeReader(xml))
+                    scene = serializer.Deserialize(documentReader) as SceneDocument;
                 if (scene == null) throw new InvalidDataException("レイアウトファイルを読み込めませんでした。");
                 if (scene.Elements == null) scene.Elements = new List<SceneElement>();
+                if (xml.DocumentElement["HostParameters"] == null) scene.HostParameters = null;
+                TurzxPanelWorks.HostParameters.Validate(scene.HostParameters);
                 return scene;
             }
         }
 
         public static SceneDocument CreateDefault()
         {
-            SceneDocument scene = new SceneDocument();
-            scene.Name = "Default";
-            scene.Elements.Add(Text("Clock", 10, 8, 460, 119, "=FORMAT([DATE.HOUR],\"HH:mm\")", 94, "Center"));
-            scene.Elements.Add(Text("Date", 10, 145, 460, 37, "=FORMAT([DATE.DAY],\"yyyy/M/d\")", 25, "Center"));
-            scene.Elements.Add(Text("CPU temperature", 83, 204, 80, 22, "=FORMAT([STATS.CPU.TEMPERATURE],\"0\") & \" °C\"", 14, "Right"));
-            scene.Elements.Add(Text("CPU load", 61, 220, 102, 31, "=FORMAT([STATS.CPU.PERCENTAGE],\"0\") & \" %\"", 23, "Right"));
-            scene.Elements.Add(Bar("CPU bar", 25, 244, 130, 10, "=[STATS.CPU.PERCENTAGE]"));
-            scene.Elements.Add(Text("GPU temperature", 237, 204, 78, 22, "=FORMAT([STATS.GPU.TEMPERATURE],\"0\") & \" °C\"", 14, "Right"));
-            scene.Elements.Add(Text("GPU load", 215, 220, 100, 31, "=FORMAT([STATS.GPU.PERCENTAGE],\"0\") & \" %\"", 23, "Right"));
-            scene.Elements.Add(Bar("GPU bar", 179, 244, 128, 10, "=[STATS.GPU.PERCENTAGE]"));
-            scene.Elements.Add(Text("RAM used", 390, 204, 72, 22, "=FORMAT([STATS.MEMORY.USED]/1024,\"0.0\") & \" GB\"", 14, "Right"));
-            scene.Elements.Add(Text("RAM load", 368, 220, 94, 31, "=FORMAT([STATS.MEMORY.PERCENTAGE],\"0\") & \" %\"", 23, "Right"));
-            scene.Elements.Add(Bar("RAM bar", 332, 244, 122, 10, "=[STATS.MEMORY.PERCENTAGE]"));
-            scene.Elements.Add(Text("Volume", 94, 268, 58, 22, "=FORMAT([STATS.AUDIO.VOLUME],\"0\")", 14, "Right"));
-            scene.Elements.Add(Bar("Volume bar", 25, 285, 64, 8, "=[STATS.AUDIO.VOLUME]"));
-            scene.Elements.Add(Graph("Upload history", 181, 283, 43, 8, "=[STATS.NETWORK.UPLOAD]"));
-            scene.Elements.Add(Text("Upload", 174, 292, 72, 15, "=NETRATE([STATS.NETWORK.UPLOAD])", 14, "Center"));
-            scene.Elements.Add(Graph("Download history", 258, 283, 43, 8, "=[STATS.NETWORK.DOWNLOAD]"));
-            scene.Elements.Add(Text("Download", 251, 292, 72, 15, "=NETRATE([STATS.NETWORK.DOWNLOAD])", 14, "Center"));
-            scene.Elements.Add(Text("Disk used", 397, 268, 53, 22, "=FORMAT([STATS.DISK.USED.PERCENTAGE],\"0\") & \" %\"", 14, "Right"));
-            scene.Elements.Add(Bar("Disk bar", 336, 305, 102, 8, "=[STATS.DISK.USED.PERCENTAGE]"));
-            return scene;
+            return LayoutCatalog.Template(0);
         }
 
         public static SceneDocument CreateDemo()

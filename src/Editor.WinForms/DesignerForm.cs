@@ -8,9 +8,10 @@ using System.Windows.Forms;
 
 namespace TurzxPanelWorks
 {
-    public sealed class DesignerForm : Form
+    public sealed partial class DesignerForm : Form
     {
         private string scenePath;
+        private readonly string backgroundPath;
         private SceneDocument scene;
         private readonly SceneRenderer renderer;
         private ITelemetryProvider provider;
@@ -47,11 +48,13 @@ namespace TurzxPanelWorks
 
         public DesignerForm(string backgroundPath, string documentPath)
         {
+            this.backgroundPath = backgroundPath;
             scenePath = documentPath;
             scene = SceneDocument.LoadOrDefault(scenePath);
             if (scene.Version < 2 || String.IsNullOrWhiteSpace(scene.Name)) scene.Name = LayoutNameFromPath(scenePath);
             scene.Version = Math.Max(2, scene.Version);
-            renderer = new SceneRenderer(backgroundPath);
+            if (LayoutCatalog.IsTemplate(scenePath)) scenePath = null;
+            renderer = new SceneRenderer(backgroundPath) { OnlineEnabled = LayoutCatalog.IsTemplate(documentPath) };
             provider = new DummyTelemetryProvider();
 
             Text = "TURZX PanelWorks Editor";
@@ -134,7 +137,7 @@ namespace TurzxPanelWorks
             help = new Label
             {
                 Location = new Point(16, 558), Size = new Size(1026, 38),
-                Text = "操作: ドラッグ=移動 / 白ハンドル=サイズ変更 / 矢印=1px / Shift+矢印=10px / 式と配置は「要素」タブ"
+                Text = "操作: ドラッグ=移動 / 白ハンドル=サイズ変更 / 矢印=1px / Shift+矢印=10px / 式と配置は「詳細」タブ"
             };
             status = new Label { Location = new Point(16, 646), Size = new Size(1026, 24), AutoEllipsis = true };
 
@@ -151,8 +154,9 @@ namespace TurzxPanelWorks
             Controls.Add(previewScaleLabel); Controls.Add(previewScaleBox); Controls.Add(help); Controls.Add(status);
 
             editorTabs = new TabControl { Location = new Point(rightPanelX, 16), Size = new Size(296, 536), Tag = "RightProperty" };
-            TabPage elementsPage = new TabPage("要素");
+            TabPage elementsPage = new TabPage("詳細");
             TabPage layoutsPage = new TabPage("レイアウト");
+            editorTabs.TabPages.Add(new TabPage("かんたん"));
             editorTabs.TabPages.Add(elementsPage); editorTabs.TabPages.Add(layoutsPage);
 
             elementList.Parent = elementsPage; elementList.Location = new Point(6, 8); elementList.Size = new Size(272, 108);
@@ -209,6 +213,10 @@ namespace TurzxPanelWorks
             layoutsPage.Controls.Add(LayoutButton("一覧を更新", 146, 414, 126, delegate { RefreshLayoutFiles(); }));
             layoutsPage.Controls.Add(LayoutButton("既定内容に戻す", 8, 450, 264, delegate { ResetScene(); }));
             Controls.Add(editorTabs);
+            editorTabs.SelectedIndexChanged += delegate { RenderCanvas(); };
+            AddQuickEditor();
+            AddWidgetEditor();
+            AddMarketEditor();
 
             bottomToolbar.Add(dataMode); bottomToolbar.Add(refresh); bottomToolbar.Add(savePng);
             bottomToolbar.Add(refreshIntervalLabel); bottomToolbar.Add(refreshIntervalBox);
@@ -295,6 +303,7 @@ namespace TurzxPanelWorks
 
         private void ReloadElementList(SceneElement toSelect)
         {
+            RefreshWidgetChoices();
             applyingProperties = true;
             elementList.Items.Clear();
             foreach (SceneElement element in scene.Elements) elementList.Items.Add(element);
@@ -438,7 +447,7 @@ namespace TurzxPanelWorks
 
         private void CanvasMouseDown(object sender, MouseEventArgs args)
         {
-            if (args.Button != MouseButtons.Left) return;
+            if (args.Button != MouseButtons.Left || editorTabs.SelectedIndex != 1) return;
             Point point = ToLogical(args.Location);
             resizeHandle = selected == null ? ResizeHandle.None : SelectionAdorner.HitTest(selected.Bounds, point);
             if (resizeHandle == ResizeHandle.None)
@@ -523,7 +532,7 @@ namespace TurzxPanelWorks
 
         private void DesignerKeyDown(object sender, KeyEventArgs args)
         {
-            if (selected == null || formulaBox.Focused || nameBox.Focused) return;
+            if (selected == null || editorTabs.SelectedIndex != 1 || formulaBox.Focused || nameBox.Focused) return;
             if (args.KeyCode == Keys.Delete) { DeleteElement(); args.Handled = true; return; }
             int step = args.Shift ? 10 : 1;
             if (args.KeyCode == Keys.Left) selected.X -= step; else if (args.KeyCode == Keys.Right) selected.X += step;
@@ -584,7 +593,7 @@ namespace TurzxPanelWorks
         {
             if (snapshot == null) return;
             Bitmap next = renderer.Render(scene, snapshot);
-            if (selected != null) SelectionAdorner.Draw(next, selected.Bounds);
+            if (selected != null && editorTabs != null && editorTabs.SelectedIndex == 1) SelectionAdorner.Draw(next, selected.Bounds);
             Image old = canvas.Image; canvas.Image = next; if (old != null) old.Dispose();
             if (selected != null)
             {
@@ -608,7 +617,9 @@ namespace TurzxPanelWorks
         private void ResetScene()
         {
             SceneDocument defaults = SceneDocument.CreateDefault();
-            scene.Elements.Clear(); scene.Elements.AddRange(defaults.Elements);
+            scene = defaults;
+            SyncQuickChoices();
+            UpdateLayoutUi();
             ReloadElementList(scene.Elements.Count > 0 ? scene.Elements[0] : null);
             MarkDirty();
             status.Text = "既定内容へ戻しました。保存するまで元のファイルは変更されません。";
@@ -649,12 +660,13 @@ namespace TurzxPanelWorks
         {
             if (!ConfirmDiscardChanges()) return;
             scene = SceneDocument.CreateDefault();
-            scene.Name = "New layout";
+            scene.Name = "新しいレイアウト";
+            SyncQuickChoices();
             scenePath = null;
             isDirty = true;
             ReloadElementList(scene.Elements.Count > 0 ? scene.Elements[0] : null);
             UpdateLayoutUi();
-            editorTabs.SelectedIndex = 1;
+            editorTabs.SelectedIndex = 2;
             status.Text = "新しい未保存レイアウトを作成しました。";
             RenderCanvas();
         }
@@ -688,10 +700,12 @@ namespace TurzxPanelWorks
                 scenePath = Path.GetFullPath(path);
                 if (scene.Version < 2 || String.IsNullOrWhiteSpace(scene.Name)) scene.Name = LayoutNameFromPath(scenePath);
                 scene.Version = Math.Max(2, scene.Version);
+                if (LayoutCatalog.IsTemplate(scenePath)) { scenePath = null; renderer.OnlineEnabled = true; if (onlineWidgets != null) onlineWidgets.Checked = true; }
                 isDirty = false;
+                SyncQuickChoices();
                 ReloadElementList(scene.Elements.Count > 0 ? scene.Elements[0] : null);
                 UpdateLayoutUi();
-                status.Text = "読込: " + scenePath;
+                status.Text = String.IsNullOrEmpty(scenePath) ? "テンプレートのコピーを開きました。別名で保存してください。" : "読込: " + scenePath;
                 RenderCanvas();
             }
             catch (Exception error)
@@ -768,7 +782,7 @@ namespace TurzxPanelWorks
             layoutFiles.Items.Clear();
             string directory = CurrentLayoutDirectory();
             if (Directory.Exists(directory))
-                foreach (string file in Directory.GetFiles(directory, "*.scene.xml"))
+                foreach (string file in SortedLayoutFiles(directory))
                     layoutFiles.Items.Add(new LayoutFileItem(file));
             for (int index = 0; index < layoutFiles.Items.Count; index++)
             {
@@ -779,10 +793,17 @@ namespace TurzxPanelWorks
             layoutFiles.EndUpdate();
         }
 
+        private static string[] SortedLayoutFiles(string directory)
+        {
+            string[] files = Directory.GetFiles(directory, "*.scene.xml");
+            Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+            return files;
+        }
+
         private string CurrentLayoutDirectory()
         {
             if (!String.IsNullOrEmpty(scenePath)) return Path.GetDirectoryName(Path.GetFullPath(scenePath));
-            string directory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "layouts");
+            string directory = LayoutCatalog.DirectoryPath;
             if (!Directory.Exists(directory)) Directory.CreateDirectory(directory);
             return directory;
         }
@@ -795,6 +816,7 @@ namespace TurzxPanelWorks
 
         private static string LayoutNameFromPath(string path)
         {
+            if (String.IsNullOrEmpty(path)) return "新しいレイアウト";
             string name = Path.GetFileName(path);
             return name.EndsWith(".scene.xml", StringComparison.OrdinalIgnoreCase)
                 ? name.Substring(0, name.Length - ".scene.xml".Length) : Path.GetFileNameWithoutExtension(name);

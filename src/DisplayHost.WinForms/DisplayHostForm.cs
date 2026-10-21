@@ -9,7 +9,7 @@ using System.Windows.Forms;
 
 namespace TurzxPanelWorks
 {
-    public sealed class DisplayHostForm : Form
+    public sealed partial class DisplayHostForm : Form
     {
         private readonly string scenePath, backgroundPath;
         private readonly string settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "StandaloneDisplay", "refresh.xml");
@@ -17,9 +17,12 @@ namespace TurzxPanelWorks
         private readonly DataGridView devices = new DataGridView();
         private readonly PictureBox preview = new PictureBox();
         private readonly TextBox status = new TextBox { Multiline = true, ReadOnly = true, BorderStyle = BorderStyle.None, ScrollBars = ScrollBars.Vertical, TabStop = false };
-        private readonly NumericUpDown interval = new NumericUpDown();
         private readonly Button scan = new Button(), once = new Button(), start = new Button(), stop = new Button();
         private readonly Timer timer = new Timer();
+        private readonly Timer previewTimer = new Timer { Interval = 1000 };
+        private Task previewPending = Task.FromResult(0);
+        private bool previewBusy;
+        private int previewRevision;
         private readonly NotifyIcon tray = new NotifyIcon();
         private readonly ContextMenuStrip trayMenu = new ContextMenuStrip();
         private readonly RefreshOptions options;
@@ -35,7 +38,7 @@ namespace TurzxPanelWorks
             catch { options = new RefreshOptions(); }
             Text = "TURZX PanelWorks Host";
             Icon = AppLifetime.LoadIcon(typeof(DisplayHostForm).Assembly);
-            ClientSize = new Size(1180, 444);
+            ClientSize = new Size(1180, 536);
             tray.Icon = Icon;
             tray.Text = "TURZX PanelWorks Host";
             tray.ContextMenuStrip = trayMenu;
@@ -74,6 +77,8 @@ namespace TurzxPanelWorks
             rotation.Items.AddRange(0, 90, 180, 270);
             devices.Columns.Add(rotation);
             devices.CurrentCellDirtyStateChanged += delegate { if (devices.IsCurrentCellDirty) devices.CommitEdit(DataGridViewDataErrorContexts.Commit); };
+            devices.CellValueChanged += delegate { PreviewSelectionChanged(); };
+            devices.SelectionChanged += delegate { PreviewSelectionChanged(); };
             devices.CellDoubleClick += delegate(object sender, DataGridViewCellEventArgs args)
             { if (args.RowIndex >= 0 && (args.ColumnIndex == 2 || args.ColumnIndex == 3)) ChooseFile(args.ColumnIndex == 3); };
             Button chooseScene = new Button(), chooseBackground = new Button(), clearBackground = new Button();
@@ -85,25 +90,19 @@ namespace TurzxPanelWorks
             clearBackground.Click += delegate { if (!running && !busy && devices.CurrentRow != null) SetPath(devices.CurrentRow, 3, null); };
             Label hint = new Label { Text = "行を選び、レイアウト・背景・時計回りの回転角を指定します。", Left = 632, Top = 282, Width = 532 };
             Controls.Add(hint);
-            Label caption = new Label { Text = "更新間隔（完了後の待機秒）", Left = 632, Top = 314, Width = 260 };
-            interval.SetBounds(896, 310, 120, 28);
-            interval.Minimum = 0.25m;
-            interval.Maximum = 60;
-            interval.DecimalPlaces = 2;
-            interval.Increment = 0.25m;
-            interval.Value = options.IntervalMilliseconds / 1000m;
-            interval.ValueChanged += delegate { options.IntervalMilliseconds = (int)(interval.Value * 1000); timer.Interval = options.IntervalMilliseconds; };
-            SetupButton(scan, "機器一覧", 632, 346);
-            SetupButton(once, "1回更新", 764, 346);
-            SetupButton(start, "更新開始", 896, 346);
-            SetupButton(stop, "停止・切断", 1028, 346);
+            InitializeParameterPanel();
+            Controls.Add(new Label { Text = "取得とカード切替は画面送信とは別に動きます。\n実機への反映は次の画面送信時です。設定は終了時に保存します。\n選択中XMLの設定だけを表示。同じキーの設定値は共有します。", Bounds = new Rectangle(16, 438, 460, 72) });
+            SetupButton(scan, "機器一覧", 632, 446);
+            SetupButton(once, "1回更新", 764, 446);
+            SetupButton(start, "更新開始", 896, 446);
+            SetupButton(stop, "停止・切断", 1028, 446);
             scan.Click += async delegate { await RunUiAsync(ScanAsync); };
             once.Click += async delegate { await RunUiAsync(UpdateAsync); };
             start.Click += async delegate { running = true; await RunUiAsync(UpdateAsync); };
             stop.Click += async delegate { await StopAsync(); };
-            status.SetBounds(632, 390, 532, 38);
+            status.SetBounds(632, 490, 532, 30);
             status.Text = "読み込み中";
-            Controls.Add(preview); Controls.Add(devices); Controls.Add(caption); Controls.Add(interval); Controls.Add(status);
+            Controls.Add(preview); Controls.Add(devices); Controls.Add(status);
             timer.Interval = options.IntervalMilliseconds;
             timer.Tick += async delegate
             {
@@ -113,6 +112,7 @@ namespace TurzxPanelWorks
                 await RunUiAsync(UpdateAsync);
             };
             Shown += async delegate { await RunUiAsync(InitializeAsync); };
+            previewTimer.Tick += delegate { RequestPreview(); };
             FormClosing += OnClosing;
             SetControls();
         }
@@ -121,7 +121,6 @@ namespace TurzxPanelWorks
         {
             button.Text = label; button.SetBounds(x, y, 124, 30); Controls.Add(button);
         }
-
         private void RestoreFromTray()
         {
             if (!closing) AppLifetime.Restore(this);
@@ -135,6 +134,7 @@ namespace TurzxPanelWorks
                 tray.Dispose();
                 trayMenu.Dispose();
                 timer.Dispose();
+                previewTimer.Dispose();
             }
             base.Dispose(disposing);
         }
@@ -144,12 +144,13 @@ namespace TurzxPanelWorks
             runtime = await Task.Run(delegate
             {
                 return new DisplayUpdateCoordinator(
-                    new SceneFrameSourceFactory(new WindowsTelemetryProvider()),
+                    new SceneFrameSourceFactory(new WindowsTelemetryProvider { HeavyRefreshMilliseconds = 0 }, true, options),
                     new UsbDisplaySessionFactory(discovery), scenePath, backgroundPath);
             });
             if (closing) return;
             await ScanAsync();
             await UpdateAsync();
+            previewTimer.Start();
         }
 
         private Task RunUiAsync(Func<Task> action)
@@ -167,7 +168,7 @@ namespace TurzxPanelWorks
             try
             {
                 Exception failure = null;
-                try { await action(); } catch (Exception error) { failure = error; }
+                try { await previewPending; await action(); } catch (Exception error) { failure = error; }
                 if (failure != null)
                 {
                     running = false;
@@ -219,15 +220,55 @@ namespace TurzxPanelWorks
             using (UpdateResult result = await runtime.RefreshTargetsAsync(selected))
             {
                 if (result == null || closing) return;
-                Image previous = preview.Image;
-                preview.Image = result.TakePreview();
-                if (previous != null) previous.Dispose();
                 StringBuilder message = new StringBuilder();
                 if (selected.Count > 0) message.AppendLine("プレビュー: " + selected[0].Device.PortName + " / " + Path.GetFileName(selected[0].ScenePath));
                 foreach (DisplaySendResult device in result.Devices)
                     message.AppendLine(device.Device.PortName + ": " + (device.Error != null ? "停止: " + device.Error.Message : device.Skipped ? "変更なし" : "転送完了"));
                 status.Text = selected.Count == 0 ? "プレビュー更新（USB送信先なし）" : message.ToString();
             }
+            await RefreshPreviewAsync();
+        }
+
+        private void PreviewSelectionChanged()
+        {
+            RefreshParameterControls();
+            previewRevision++;
+            Image previous = preview.Image; preview.Image = null;
+            if (previous != null) previous.Dispose();
+            if (runtime != null && !busy && !closing) status.Text = "選択したレイアウトを読み込み中…";
+            RequestPreview();
+        }
+
+        private void RequestPreview()
+        {
+            RefreshParameterControls();
+            if (runtime == null || closing || busy || previewBusy || (inTray && (!running || SelectedTargets().Count == 0))) return;
+            previewPending = RefreshPreviewAsync();
+        }
+
+        private async Task RefreshPreviewAsync()
+        {
+            if (runtime == null || closing || previewBusy) return;
+            previewBusy = true;
+            int revision = previewRevision;
+            DataGridViewRow row = devices.CurrentRow;
+            string selectedScene = row == null ? scenePath : (string)row.Cells[2].Tag ?? scenePath;
+            string selectedBackground = row == null ? backgroundPath : (string)row.Cells[3].Tag;
+            int rotation = row == null ? 0 : Convert.ToInt32(row.Cells[4].Value);
+            try
+            {
+                using (UpdateResult result = await runtime.PreviewAsync(selectedScene, selectedBackground, rotation, running ? SelectedTargets() : null))
+                {
+                    if (result != null && !closing && revision == previewRevision)
+                    {
+                        Image previous = preview.Image; preview.Image = result.TakePreview();
+                        if (previous != null) previous.Dispose();
+                    }
+                }
+            }
+            catch (Exception error) { if (!closing && revision == previewRevision) status.Text = "プレビュー読込エラー: " + error.Message; }
+            finally { previewBusy = false; }
+            if (!closing && revision != previewRevision) RequestPreview();
         }
 
         private async Task StopAsync()
@@ -249,8 +290,10 @@ namespace TurzxPanelWorks
             closing = true;
             running = false;
             timer.Stop();
+            previewTimer.Stop();
             SetControls();
             await pendingUi;
+            await previewPending;
             Exception cleanupError = null;
             try { if (runtime != null) await runtime.CloseAsync(); }
             catch (Exception error) { cleanupError = error; }
@@ -282,6 +325,7 @@ namespace TurzxPanelWorks
             if (busy || running || closing || devices.CurrentRow == null) return;
             using (OpenFileDialog dialog = new OpenFileDialog())
             {
+                if (!background) dialog.InitialDirectory = LayoutCatalog.DirectoryPath;
                 dialog.Filter = background ? "Images|*.png;*.jpg;*.bmp" : "Scene XML|*.xml";
                 if (dialog.ShowDialog(this) == DialogResult.OK) SetPath(devices.CurrentRow, background ? 3 : 2, dialog.FileName);
             }

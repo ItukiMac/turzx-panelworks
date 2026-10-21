@@ -12,16 +12,20 @@ namespace TurzxPanelWorks
     public sealed class SceneFrameSourceFactory : IFrameSourceFactory
     {
         private readonly ITelemetryProvider telemetry;
+        private readonly bool onlineEnabled;
         private readonly CycleTelemetry shared;
-        public SceneFrameSourceFactory(ITelemetryProvider telemetry)
+        private readonly RefreshOptions timing;
+        public SceneFrameSourceFactory(ITelemetryProvider telemetry, bool onlineEnabled = false, RefreshOptions timing = null)
         {
-            this.telemetry = telemetry;
-            shared = new CycleTelemetry(telemetry);
+            this.timing = timing;
+            this.telemetry = timing == null ? telemetry : new TimedTelemetryProvider(telemetry, delegate { return timing.HardwareIntervalMilliseconds; });
+            this.onlineEnabled = onlineEnabled;
+            shared = new CycleTelemetry(this.telemetry);
         }
         public void BeginCycle() { shared.Clear(); }
         public IFrameSource Create(string scenePath, string backgroundPath)
         {
-            return new SceneFrameSource(scenePath, new SceneRenderer(backgroundPath), shared);
+            return new SceneFrameSource(scenePath, new SceneRenderer(backgroundPath) { OnlineEnabled = onlineEnabled }, shared, timing);
         }
         public void Dispose() { telemetry.Dispose(); }
 

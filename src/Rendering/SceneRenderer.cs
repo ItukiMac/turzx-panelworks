@@ -14,6 +14,9 @@ namespace TurzxPanelWorks
         public const int CanvasWidth = 480;
         public const int CanvasHeight = 320;
         private readonly Bitmap background;
+        private readonly WidgetRenderer widgets = new WidgetRenderer();
+        public bool OnlineEnabled { get { return widgets.OnlineEnabled; } set { widgets.OnlineEnabled = value; } }
+        public ContentTiming ContentTiming { get { return widgets.Timing; } set { widgets.Timing = value; } }
         private readonly FormulaEngine formulas = new FormulaEngine();
         private readonly Dictionary<string, List<double>> histories = new Dictionary<string, List<double>>();
         private readonly Dictionary<string, DateTime> historyTimestamps = new Dictionary<string, DateTime>();
@@ -34,15 +37,20 @@ namespace TurzxPanelWorks
 
         public Bitmap Render(SceneDocument scene, TelemetrySnapshot snapshot)
         {
+            return Render(scene, snapshot, snapshot.Timestamp);
+        }
+        public Bitmap Render(SceneDocument scene, TelemetrySnapshot snapshot, DateTime displayTime)
+        {
             Bitmap frame = new Bitmap(CanvasWidth, CanvasHeight, PixelFormat.Format32bppArgb);
-            FormulaContext context = FormulaContext.FromSnapshot(snapshot);
+            FormulaContext context = FormulaContext.FromSnapshot(snapshot, displayTime);
             UpdateHistories(scene, context, snapshot.Timestamp);
             using (Graphics graphics = Graphics.FromImage(frame))
             {
                 graphics.DrawImageUnscaled(background, 0, 0);
                 graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                foreach (SceneElement element in scene.Elements) DrawElement(graphics, element, context);
+                foreach (SceneElement element in scene.Elements)
+                    if (!widgets.Draw(graphics, element, displayTime)) DrawElement(graphics, element, context);
             }
             return frame;
         }
@@ -200,6 +208,6 @@ namespace TurzxPanelWorks
             return new Font(FontFamily.GenericSansSerif, pixels, style, GraphicsUnit.Pixel);
         }
 
-        public void Dispose() { background.Dispose(); }
+        public void Dispose() { widgets.Dispose(); background.Dispose(); }
     }
 }

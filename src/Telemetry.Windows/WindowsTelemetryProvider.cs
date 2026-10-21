@@ -19,6 +19,12 @@ namespace TurzxPanelWorks
         private readonly Stopwatch monotonicClock = Stopwatch.StartNew();
         private long lastGpuCounterRefreshMilliseconds = -5000;
         private long lastHeavyRefreshMilliseconds = -5000;
+        private int heavyRefreshMilliseconds = 5000;
+        public int HeavyRefreshMilliseconds
+        {
+            get { return heavyRefreshMilliseconds; }
+            set { if (value < 0 || value > 60000) throw new ArgumentOutOfRangeException("value"); heavyRefreshMilliseconds = value; }
+        }
         private long cachedTotalMb;
         private long cachedUsedMb;
         private double cachedGpuLoad;
@@ -84,7 +90,7 @@ namespace TurzxPanelWorks
         private void RefreshHeavyValues()
         {
             long elapsed = monotonicClock.ElapsedMilliseconds;
-            if (elapsed - lastHeavyRefreshMilliseconds < 5000) return;
+            if (elapsed - lastHeavyRefreshMilliseconds < heavyRefreshMilliseconds) return;
             lastHeavyRefreshMilliseconds = elapsed;
 
             long totalMb;

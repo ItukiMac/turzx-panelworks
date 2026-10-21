@@ -10,7 +10,9 @@ namespace TurzxPanelWorks
         [STAThread]
         private static void Main(string[] args)
         {
-            string scene = args.Length > 0 ? Path.GetFullPath(args[0]) : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "scene.xml");
+            LayoutCatalog.EnsureTemplates();
+            if (args.Length == 1 && args[0] == "--export-templates") return;
+            string scene = args.Length > 0 ? Path.GetFullPath(args[0]) : LayoutCatalog.DefaultPath;
             string background = args.Length > 1 ? Path.GetFullPath(args[1]) : null;
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);

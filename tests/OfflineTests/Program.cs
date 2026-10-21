@@ -11,18 +11,199 @@ using System.Threading.Tasks;
 
 namespace TurzxPanelWorks
 {
-    internal static class OfflineTests
+    internal static partial class OfflineTests
     {
         private static int failures;
         private static void Check(bool value, string name) { if (!value) { failures++; Console.Error.WriteLine("FAIL: " + name); } }
         private static int Main(string[] args)
         {
+            if (args.Length == 2 && args[0] == "--upgrade-template-parameters")
+            {
+                foreach (string name in LayoutCatalog.FileNames)
+                {
+                    string path = Path.Combine(args[1], name);
+                    if (!File.Exists(path)) continue;
+                    SceneDocument scene = SceneDocument.Load(path);
+                    if (scene.HostParameters == null) { scene.Save(path); Console.WriteLine("Added XML parameter definitions: " + name); }
+                }
+                return 0;
+            }
+            if (args.Length == 0) { Run("XmlHostParameters", XmlHostParameters); Run("MarketQuotes", MarketQuotes); }
+            if (args.Length == 2 && args[0] == "--news-preview") return NewsPreview(args[1]);
+            if (args.Length == 0) { Run("NewsCarousel", NewsCarousel); Run("PreviewSelection", PreviewSelection); Run("IndependentTiming", IndependentTiming); Run("TimingPersistence", TimingPersistence); Run("ContentTimingOverrides", ContentTimingOverrides); }
             if (args.Length == 1 && args[0] == "--benchmark") return BenchmarkEncoding();
-            FormulaAndScene(); Rendering(); Encoding(); RotationBehavior(); RefreshOptionBounds(); RefreshOptionRoundTrip(); SharedTelemetryLifetime(); RuntimeBehavior(); TargetSpecificFrames(); FaultCleanup(); BusyAndClose();
+            if (args.Length == 2 && args[0] == "--render-templates") return RenderTemplates(args[1]);
+            if (args.Length == 3 && args[0] == "--capture-site")
+            {
+                try { File.WriteAllBytes(args[2], WebsiteCapture.Capture(args[1], 480, 320, CancellationToken.None)); return 0; }
+                catch (Exception error) { Console.Error.WriteLine(error.GetType().FullName); Console.Error.WriteLine(error.Message); return 1; }
+            }
+            if (args.Length == 2 && args[0] == "--online-widgets")
+            {
+                try { return OnlineWidgets(args[1]); }
+                catch (Exception error) { Console.Error.WriteLine(error.GetType().FullName); Console.Error.WriteLine(error.Message); return 1; }
+            }
+            Run("WidgetContracts", WidgetContracts); Run("TemplateLayouts", TemplateLayouts); Run("FormulaAndScene", FormulaAndScene); Run("Rendering", Rendering); Run("Encoding", Encoding); Run("RotationBehavior", RotationBehavior); Run("RefreshOptionBounds", RefreshOptionBounds); Run("RefreshOptionRoundTrip", RefreshOptionRoundTrip); Run("SharedTelemetryLifetime", SharedTelemetryLifetime); Run("RuntimeBehavior", RuntimeBehavior); Run("TargetSpecificFrames", TargetSpecificFrames); Run("FaultCleanup", FaultCleanup); Run("BusyAndClose", BusyAndClose); Run("PersistenceFailures", PersistenceFailures); Run("FrameReload", FrameReload); Run("EncoderInputFailures", EncoderInputFailures); Run("CalendarPositions", CalendarPositions); Run("AsyncWeather", AsyncWeather);
             Console.WriteLine(failures == 0 ? "PASS: offline test suite" : "FAILURES: " + failures);
             return failures == 0 ? 0 : 1;
         }
 
+        private static void WidgetContracts()
+        {
+            string json = "{\"daily\":{\"time\":[\"2026-10-21\",\"2026-10-22\",\"2026-10-23\"],\"weather_code\":[0,61,null],\"temperature_2m_max\":[24,20,null],\"temperature_2m_min\":[15,12,null],\"precipitation_probability_max\":[10,80,null]}}";
+            ForecastDay[] days = WeatherForecast.Parse(json);
+            Check(days.Length == 3 && days[0].Condition == "快晴" && days[1].Condition == "雨", "weather codes parsed");
+            Check(days[2].High == "--" && days[2].Condition == "未取得", "weather missing values explicit");
+            bool rejected = false;
+            try { WeatherForecast.Parse("{\"daily\":{\"time\":[]}}"); } catch (InvalidDataException) { rejected = true; }
+            Check(rejected, "incomplete forecast rejected");
+            rejected = false; try { WeatherForecast.Url(Double.NaN, 139); } catch (ArgumentException) { rejected = true; }
+            Check(rejected, "invalid coordinate rejected");
+            foreach (string url in new[] { "file:///C:/private.txt", "javascript:alert(1)", "https://user:password@example.com/" })
+            {
+                rejected = false; try { WebsiteCapture.ValidateUrl(url); } catch (ArgumentException) { rejected = true; }
+                Check(rejected, "unsafe website source rejected");
+            }
+            Check(WebsiteCapture.ValidateUrl("https://news.yahoo.co.jp/").Host == "news.yahoo.co.jp", "website URL accepted");
+            using (Bitmap blank = new Bitmap(480, 320))
+            using (Graphics g = Graphics.FromImage(blank))
+            using (MemoryStream bytes = new MemoryStream())
+            {
+                g.Clear(Color.White); blank.Save(bytes, ImageFormat.Png);
+                Check(!WebsiteCapture.HasVisibleContent(bytes.ToArray(), 480, 320), "blank website image rejected");
+                g.FillRectangle(Brushes.Black, 20, 20, 100, 40); bytes.SetLength(0); blank.Save(bytes, ImageFormat.Png);
+                Check(WebsiteCapture.HasVisibleContent(bytes.ToArray(), 480, 320), "nonblank website image accepted");
+            }
+            SceneElement site = LayoutCatalog.Widget("サイト", new Rectangle(0, 0, 480, 320));
+            site.SourceUrl = "https://example.com/"; site.ViewportWidth = 960; site.RefreshMinutes = 5;
+            SceneElement copy = site.Clone();
+            Check(copy.SourceUrl == site.SourceUrl && copy.ViewportWidth == 960 && copy.RefreshMinutes == 5, "widget clone preserves settings");
+            using (DummyTelemetryProvider provider = new DummyTelemetryProvider())
+                foreach (DateTime date in new[] { new DateTime(2024, 2, 29), new DateTime(2026, 8, 31) })
+                {
+                    TelemetrySnapshot snapshot = provider.Capture(); snapshot.Timestamp = date;
+                    SceneDocument scene = new SceneDocument(); scene.Elements.Add(LayoutCatalog.Widget("カレンダー", new Rectangle(0, 0, 480, 320)));
+                    using (SceneRenderer renderer = new SceneRenderer(null))
+                    using (Bitmap image = renderer.Render(scene, snapshot)) Check(image.Width == 480, "calendar leap and six-week rendering");
+                }
+        }
+        private static int OnlineWidgets(string directory)
+        {
+            Directory.CreateDirectory(directory);
+            ForecastDay[] forecast = WeatherForecast.Fetch(35.681, 139.767, CancellationToken.None);
+            if (forecast.Length != 3) throw new Exception("Live Tokyo forecast missing.");
+            Console.WriteLine("PASS: Tokyo live forecast (" + forecast[0].Date + ")");
+            byte[] image = WebsiteCapture.Capture("https://news.yahoo.co.jp/", 480, 320, CancellationToken.None);
+            File.WriteAllBytes(Path.Combine(directory, "yahoo-live.png"), image);
+            Console.WriteLine("PASS: Yahoo website capture returned PNG; inspect contents visually.");
+            using (DummyTelemetryProvider telemetry = new DummyTelemetryProvider())
+            using (SceneRenderer renderer = new SceneRenderer(null) { OnlineEnabled = true })
+            using (SceneRenderer websiteRenderer = new SceneRenderer(null) { OnlineEnabled = true })
+            {
+                SceneDocument scene = LayoutCatalog.Template(5);
+                SceneDocument website = LayoutCatalog.Template(6);
+                // Explicit online diagnostic only; normal tests never enable network.
+                for (int i = 0; i < 25; i++)
+                {
+                    using (Bitmap frame = renderer.Render(scene, telemetry.Capture()))
+                        if (i == 24) frame.Save(Path.Combine(directory, "calendar-weather-live.png"), ImageFormat.Png);
+                    using (Bitmap frame = websiteRenderer.Render(website, telemetry.Capture()))
+                        if (i == 24) frame.Save(Path.Combine(directory, "website-layout-live.png"), ImageFormat.Png);
+                    Thread.Sleep(500);
+                }
+            }
+            return 0;
+        }
+        private static void TemplateLayouts()
+        {
+            string directory = Path.Combine(Path.GetTempPath(), "layouts-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(directory);
+            try
+            {
+                using (DummyTelemetryProvider provider = new DummyTelemetryProvider())
+                {
+                    TelemetrySnapshot snapshot = provider.Capture();
+                    snapshot.CpuLoadPercent = snapshot.GpuLoadPercent = snapshot.RamLoadPercent = 100;
+                    snapshot.CpuTemperatureC = snapshot.GpuTemperatureC = null;
+                    snapshot.RamUsedMb = 131072;
+                    snapshot.UploadMbps = snapshot.DownloadMbps = 1000;
+                    FormulaEngine formulas = new FormulaEngine();
+                    for (int layout = 0; layout < LayoutCatalog.LayoutNames.Length; layout++)
+                        foreach (string metric in LayoutCatalog.Metrics)
+                        {
+                            int count = LayoutCatalog.Blocks(layout).Length;
+                            string[] values = new string[count];
+                            for (int i = 0; i < count; i++) values[i] = metric;
+                            SceneDocument scene = LayoutCatalog.Create(layout, values);
+                            HashSet<string> ids = new HashSet<string>();
+                            int labels = 0;
+                            foreach (SceneElement element in scene.Elements)
+                            {
+                                Check(ids.Add(element.Id), "unique element id");
+                                Check(element.X >= 0 && element.Y >= 0 && element.Width > 0 && element.Height > 0 && element.Bounds.Right <= 480 && element.Bounds.Bottom <= 320, "template bounds");
+                                if (element.Kind == SceneElementKind.Text)
+                                {
+                                    Check(formulas.EvaluateText(element.Formula, FormulaContext.FromSnapshot(snapshot)) != "#ERROR", "template formula " + metric);
+                                    if (element.Name.EndsWith(" title")) labels++;
+                                }
+                            }
+                            Check(labels == (Array.IndexOf(new[] { "空白", "カレンダー", "天気", "サイト", "ニュース" }, metric) >= 0 ? 0 : count), "every metric has a title");
+                            string path = Path.Combine(directory, "roundtrip.scene.xml");
+                            scene.Save(path);
+                            SceneDocument loaded = SceneDocument.Load(path);
+                            Check(loaded.QuickLayout == layout && loaded.QuickMetrics.Count == count && loaded.QuickMetrics[0] == metric, "quick settings round trip");
+                            using (SceneRenderer renderer = new SceneRenderer(null))
+                            using (Bitmap image = renderer.Render(loaded, snapshot)) Check(image.Width == 480 && image.Height == 320, "grid renders");
+                        }
+                }
+                string oldPath = Path.Combine(directory, "legacy.xml");
+                File.WriteAllText(oldPath, "<DashboardScene><Version>2</Version><Name>Legacy</Name><Elements /></DashboardScene>");
+                SceneDocument legacy = SceneDocument.Load(oldPath);
+                Check(legacy.QuickLayout == -1 && legacy.Elements.Count == 0, "legacy layout still loads");
+                LayoutCatalog.EnsureTemplates(directory);
+                for (int i = 0; i < LayoutCatalog.FileNames.Length; i++)
+                    Check(SceneDocument.Load(Path.Combine(directory, LayoutCatalog.FileNames[i])).Name == LayoutCatalog.TemplateNames[i], "numbered template available");
+                string template = Path.Combine(directory, LayoutCatalog.FileNames[0]);
+                SceneDocument custom = SceneDocument.Load(template); custom.Name = "Custom"; custom.Save(template);
+                byte[] before = File.ReadAllBytes(template);
+                LayoutCatalog.EnsureTemplates(directory);
+                Check(Convert.ToBase64String(before) == Convert.ToBase64String(File.ReadAllBytes(template)), "existing template not overwritten");
+            }
+            finally { Directory.Delete(directory, true); }
+        }
+
+        private static int RenderTemplates(string directory)
+        {
+            Directory.CreateDirectory(directory);
+            using (Bitmap gallery = new Bitmap(1000, ((LayoutCatalog.FileNames.Length + 1) / 2) * 368 + 8))
+            using (Graphics graphics = Graphics.FromImage(gallery))
+            using (Font font = new Font("Segoe UI", 16, FontStyle.Bold, GraphicsUnit.Pixel))
+            {
+                graphics.Clear(Color.FromArgb(8, 12, 20));
+                for (int i = 0; i < LayoutCatalog.FileNames.Length; i++)
+                    using (DummyTelemetryProvider provider = new DummyTelemetryProvider())
+                    using (SceneRenderer renderer = new SceneRenderer(null))
+                    {
+                        SceneDocument scene = SceneDocument.Load(Path.Combine(LayoutCatalog.DirectoryPath, LayoutCatalog.FileNames[i]));
+                        for (int frame = 0; frame < 30; frame++)
+                        {
+                            TelemetrySnapshot snapshot = provider.Capture();
+                            snapshot.Timestamp = new DateTime(2026, 10, 21, 10, 8, 0).AddSeconds(frame);
+                            using (Bitmap image = renderer.Render(scene, snapshot))
+                                if (frame == 29)
+                                {
+                                    image.Save(Path.Combine(directory, Path.GetFileNameWithoutExtension(LayoutCatalog.FileNames[i]) + ".png"), ImageFormat.Png);
+                                    int x = 12 + (i % 2) * 496, y = 12 + (i / 2) * 368;
+                                    graphics.DrawString(LayoutCatalog.TemplateNames[i], font, Brushes.White, x, y);
+                                    graphics.DrawImageUnscaled(image, x, y + 28);
+                                }
+                        }
+                    }
+                gallery.Save(Path.Combine(directory, "templates.png"), ImageFormat.Png);
+            }
+            Console.WriteLine("PASS: rendered numbered template previews");
+            return 0;
+        }
         private static void RotationBehavior()
         {
             using (Bitmap frame = new Bitmap(480, 320))
@@ -63,7 +244,7 @@ namespace TurzxPanelWorks
                 using (UpdateResult result = Await(runtime.RefreshTargetsAsync(targets)))
                 {
                     Check(AllSucceeded(result.Devices, 2), "mixed rotations send");
-                    Check(result.Preview.GetPixel(0, 0).ToArgb() == Color.Black.ToArgb(), "preview matches rotated target");
+                    Check(result.Preview.Width == 320 && result.Preview.Height == 480, "portrait preview aspect");
                     Check(sessions.FirstPixel("rotation-a") == 0 && sessions.FirstPixel("rotation-b") == 0xF800, "per-target rotation reaches transport");
                 }
                 Check(sources.TotalCaptures == 1, "mixed rotations share one source capture");
@@ -74,6 +255,33 @@ namespace TurzxPanelWorks
             }
             Check(ThrowsOutOfRange(delegate { new DisplayTarget(a, null, null, -90); }), "target validates rotation");
             Check(ThrowsOutOfRange(delegate { new DisplayAssignment().RotationDegrees = 45; }), "settings validate rotation");
+            using (DisplayUpdateCoordinator runtime = new DisplayUpdateCoordinator(new QuadrantFrameSource(), new FakeFactory()))
+                foreach (int angle in new[] { 0, 90, 180, 270 })
+                    using (UpdateResult result = Await(runtime.RefreshTargetsAsync(new[] { new DisplayTarget(a, null, null, angle) })))
+                    {
+                        bool portrait = angle == 90 || angle == 270;
+                        Bitmap image = result.Preview;
+                        Check(image.Width == (portrait ? 320 : 480) && image.Height == (portrait ? 480 : 320), "preview dimensions " + angle);
+                        int top = portrait ? 180 : 60, bottom = portrait ? 300 : 260;
+                        Check(image.GetPixel(60, top).ToArgb() == Color.Red.ToArgb(), "preview top stays top " + angle);
+                        Check(image.GetPixel(60, bottom).ToArgb() == Color.Blue.ToArgb(), "preview bottom stays bottom " + angle);
+                        if (portrait) Check(image.GetPixel(160, 0).ToArgb() == Color.Black.ToArgb(), "upright preview padding");
+                    }
+        }
+
+        private sealed class QuadrantFrameSource : IFrameSource
+        {
+            public Bitmap Capture()
+            {
+                Bitmap image = new Bitmap(480, 320);
+                using (Graphics g = Graphics.FromImage(image))
+                {
+                    g.FillRectangle(Brushes.Red, 0, 0, 480, 160);
+                    g.FillRectangle(Brushes.Blue, 0, 160, 480, 160);
+                }
+                return image;
+            }
+            public void Dispose() { }
         }
 
         private static int BenchmarkEncoding()

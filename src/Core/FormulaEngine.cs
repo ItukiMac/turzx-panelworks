@@ -28,6 +28,10 @@ namespace TurzxPanelWorks
 
         public static FormulaContext FromSnapshot(TelemetrySnapshot snapshot)
         {
+            return FromSnapshot(snapshot, snapshot.Timestamp);
+        }
+        public static FormulaContext FromSnapshot(TelemetrySnapshot snapshot, DateTime displayTime)
+        {
             FormulaContext context = new FormulaContext();
             context.values["CpuLoad"] = snapshot.CpuLoadPercent;
             context.values["CpuTemp"] = snapshot.CpuTemperatureC;
@@ -35,15 +39,15 @@ namespace TurzxPanelWorks
             context.values["GpuTemp"] = snapshot.GpuTemperatureC;
             context.values["RamLoad"] = snapshot.RamLoadPercent;
             context.values["RamValue"] = snapshot.RamUsedMb;
-            context.values["Time"] = snapshot.Timestamp;
-            context.values["Date"] = snapshot.Timestamp;
+            context.values["Time"] = displayTime;
+            context.values["Date"] = displayTime;
             context.values["InternetUp"] = snapshot.UploadMbps;
             context.values["InternetDown"] = snapshot.DownloadMbps;
             context.values["Volume"] = snapshot.VolumePercent;
             context.values["VulomeLoad"] = snapshot.VolumePercent;
             context.values["HDDLoad"] = snapshot.DiskUsedPercent;
-            context.values["DATE.HOUR"] = snapshot.Timestamp;
-            context.values["DATE.DAY"] = snapshot.Timestamp;
+            context.values["DATE.HOUR"] = displayTime;
+            context.values["DATE.DAY"] = displayTime;
             context.values["STATS.CPU.PERCENTAGE"] = snapshot.CpuLoadPercent;
             context.values["STATS.CPU.TEMPERATURE"] = snapshot.CpuTemperatureC;
             context.values["STATS.GPU.PERCENTAGE"] = snapshot.GpuLoadPercent;
