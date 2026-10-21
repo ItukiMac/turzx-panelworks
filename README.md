@@ -4,7 +4,7 @@ TURZX製Rev A・480×320 USBディスプレイ向けの非公式Windowsアプリ
 
 ## はじめに
 
-Windows、.NET Framework 4.8、PowerShell 5.1以降で、リポジトリのルートから実行します。
+Windowsと.NET Framework 4.8があれば、同梱の `bin/` から起動できます。`lib/` と `layouts/` も同じ配置で保持してください。ソースからの再ビルド・検証にはPowerShell 5.1以降で `build/Verify.ps1` を実行します。
 
 ```powershell
 .\build\Verify.ps1
@@ -20,7 +20,7 @@ Windows、.NET Framework 4.8、PowerShell 5.1以降で、リポジトリのル�
 | `tests/` | オフライン試験・WinFormsスモーク試験 |
 | `build/` | ビルド・検証スクリプト |
 | `docs/` | 利用方法、設計、開発規約、第三者帰属 |
-| `bin/` | 生成物（Git管理外）。依存DLLは `lib/` |
+| `bin/` | ビルド済みEXE・依存DLL（`lib/`）・連番レイアウト（`layouts/`）。キャッシュと一時出力は管理外 |
 
 ## ドキュメント
 

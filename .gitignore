@@ -1,4 +1,13 @@
-bin/
+# Distributable binaries and numbered layouts; keep local caches and verification output private.
+/bin/*
+!/bin/TurzxPanelWorks.*.exe
+!/bin/TurzxPanelWorks.*.exe.config
+!/bin/lib/
+/bin/lib/*
+!/bin/lib/TurzxPanelWorks.*.dll
+!/bin/layouts/
+/bin/layouts/*
+!/bin/layouts/0[1-7]-*.scene.xml
 obj/
 .vs/
 TestResults/

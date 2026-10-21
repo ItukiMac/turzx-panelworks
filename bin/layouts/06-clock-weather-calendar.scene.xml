@@ -1,0 +1,129 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<DashboardScene xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Version>2</Version>
+  <QuickLayout>-1</QuickLayout>
+  <QuickMetrics />
+  <Name>06 時計・天気・カレンダー</Name>
+  <Elements>
+    <Element>
+      <Id>93963c3fe6fa4a13b6c58b75ae03f2eb</Id>
+      <Name>Header</Name>
+      <Kind>Rectangle</Kind>
+      <X>12</X>
+      <Y>12</Y>
+      <Width>456</Width>
+      <Height>56</Height>
+      <Formula />
+      <FontSize>12</FontSize>
+      <Bold>true</Bold>
+      <ForeColorArgb>-15524564</ForeColorArgb>
+      <FillColorArgb>-15524564</FillColorArgb>
+      <BackColorArgb>-14470845</BackColorArgb>
+      <Alignment>Left</Alignment>
+      <LocationName>東京</LocationName>
+      <Latitude>35.681</Latitude>
+      <Longitude>139.767</Longitude>
+      <RefreshMinutes>10</RefreshMinutes>
+      <ViewportWidth>480</ViewportWidth>
+      <SlideSeconds>10</SlideSeconds>
+      <VerticalAlignment>Center</VerticalAlignment>
+    </Element>
+    <Element>
+      <Id>e2d9bfc9fa304178887e74ffc7073ad8</Id>
+      <Name>時計</Name>
+      <Kind>Text</Kind>
+      <X>24</X>
+      <Y>20</Y>
+      <Width>126</Width>
+      <Height>36</Height>
+      <Formula>=FORMAT([DATE.HOUR],"HH:mm")</Formula>
+      <FontSize>30</FontSize>
+      <Bold>true</Bold>
+      <ForeColorArgb>-1</ForeColorArgb>
+      <FillColorArgb>-1</FillColorArgb>
+      <BackColorArgb>-14470845</BackColorArgb>
+      <Alignment>Left</Alignment>
+      <LocationName>東京</LocationName>
+      <Latitude>35.681</Latitude>
+      <Longitude>139.767</Longitude>
+      <RefreshMinutes>10</RefreshMinutes>
+      <ViewportWidth>480</ViewportWidth>
+      <SlideSeconds>10</SlideSeconds>
+      <VerticalAlignment>Center</VerticalAlignment>
+    </Element>
+    <Element>
+      <Id>2c1c5fb5320440f7bddca0d4cf5969c3</Id>
+      <Name>CPU GPU RAM</Name>
+      <Kind>Text</Kind>
+      <X>166</X>
+      <Y>28</Y>
+      <Width>290</Width>
+      <Height>20</Height>
+      <Formula>="CPU " &amp; FORMAT([STATS.CPU.PERCENTAGE],"0") &amp; "%  GPU " &amp; FORMAT([STATS.GPU.PERCENTAGE],"0") &amp; "%  RAM " &amp; FORMAT([STATS.MEMORY.PERCENTAGE],"0") &amp; "%"</Formula>
+      <FontSize>13</FontSize>
+      <Bold>true</Bold>
+      <ForeColorArgb>-10892299</ForeColorArgb>
+      <FillColorArgb>-10892299</FillColorArgb>
+      <BackColorArgb>-14470845</BackColorArgb>
+      <Alignment>Left</Alignment>
+      <LocationName>東京</LocationName>
+      <Latitude>35.681</Latitude>
+      <Longitude>139.767</Longitude>
+      <RefreshMinutes>10</RefreshMinutes>
+      <ViewportWidth>480</ViewportWidth>
+      <SlideSeconds>10</SlideSeconds>
+      <VerticalAlignment>Center</VerticalAlignment>
+    </Element>
+    <Element>
+      <Id>b7eb1db25f3e4cadb429ef9dc0e0f9ec</Id>
+      <Name>カレンダー</Name>
+      <Kind>Calendar</Kind>
+      <X>12</X>
+      <Y>80</Y>
+      <Width>222</Width>
+      <Height>228</Height>
+      <Formula />
+      <FontSize>12</FontSize>
+      <Bold>true</Bold>
+      <ForeColorArgb>-1</ForeColorArgb>
+      <FillColorArgb>-1</FillColorArgb>
+      <BackColorArgb>-14470845</BackColorArgb>
+      <Alignment>Left</Alignment>
+      <LocationName>東京</LocationName>
+      <Latitude>35.681</Latitude>
+      <Longitude>139.767</Longitude>
+      <RefreshMinutes>10</RefreshMinutes>
+      <ViewportWidth>480</ViewportWidth>
+      <SlideSeconds>10</SlideSeconds>
+      <VerticalAlignment>Center</VerticalAlignment>
+    </Element>
+    <Element>
+      <Id>e8577d087636431ab9e42f1d87f45dd7</Id>
+      <Name>天気</Name>
+      <Kind>Weather</Kind>
+      <X>246</X>
+      <Y>80</Y>
+      <Width>222</Width>
+      <Height>228</Height>
+      <Formula />
+      <FontSize>12</FontSize>
+      <Bold>true</Bold>
+      <ForeColorArgb>-1</ForeColorArgb>
+      <FillColorArgb>-1</FillColorArgb>
+      <BackColorArgb>-14470845</BackColorArgb>
+      <Alignment>Left</Alignment>
+      <LocationName>東京</LocationName>
+      <Latitude>35.681</Latitude>
+      <Longitude>139.767</Longitude>
+      <RefreshMinutes>10</RefreshMinutes>
+      <ViewportWidth>480</ViewportWidth>
+      <SlideSeconds>10</SlideSeconds>
+      <VerticalAlignment>Center</VerticalAlignment>
+    </Element>
+  </Elements>
+  <HostParameters>
+    <Parameter Key="host.send" Label="画面送信" Unit="秒" Target="Host" Property="IntervalMilliseconds" Minimum="0.25" Maximum="60" Step="0.25" Decimals="2" Value="1" Scale="1000" />
+    <Parameter Key="host.hardware" Label="ハードウェア取得" Unit="秒" Target="Host" Property="HardwareIntervalMilliseconds" Minimum="0.25" Maximum="60" Step="0.25" Decimals="2" Value="1" Scale="1000" />
+    <Parameter Key="weather.refresh" Label="天気取得" Unit="分" Target="kind:Weather" Property="RefreshMinutes" Minimum="1" Maximum="1440" Step="1" Decimals="0" Value="10" Scale="1" />
+  </HostParameters>
+</DashboardScene>

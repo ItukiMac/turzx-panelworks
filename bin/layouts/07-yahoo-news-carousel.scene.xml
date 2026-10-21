@@ -1,0 +1,38 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<DashboardScene xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Version>2</Version>
+  <QuickLayout>-1</QuickLayout>
+  <QuickMetrics />
+  <Name>07 Yahoo!ニュース</Name>
+  <Elements>
+    <Element>
+      <Id>b62e799e28df48bbbbb53a3dc5beb157</Id>
+      <Name>ニュース</Name>
+      <Kind>News</Kind>
+      <X>12</X>
+      <Y>12</Y>
+      <Width>456</Width>
+      <Height>296</Height>
+      <Formula />
+      <FontSize>12</FontSize>
+      <Bold>true</Bold>
+      <ForeColorArgb>-1</ForeColorArgb>
+      <FillColorArgb>-1</FillColorArgb>
+      <BackColorArgb>-14470845</BackColorArgb>
+      <Alignment>Left</Alignment>
+      <SourceUrl>https://news.yahoo.co.jp/rss/topics/top-picks.xml</SourceUrl>
+      <LocationName>東京</LocationName>
+      <Latitude>35.681</Latitude>
+      <Longitude>139.767</Longitude>
+      <RefreshMinutes>10</RefreshMinutes>
+      <ViewportWidth>480</ViewportWidth>
+      <SlideSeconds>10</SlideSeconds>
+      <VerticalAlignment>Center</VerticalAlignment>
+    </Element>
+  </Elements>
+  <HostParameters>
+    <Parameter Key="host.send" Label="画面送信" Unit="秒" Target="Host" Property="IntervalMilliseconds" Minimum="0.25" Maximum="60" Step="0.25" Decimals="2" Value="1" Scale="1000" />
+    <Parameter Key="news.refresh" Label="ニュース取得" Unit="分" Target="kind:News" Property="RefreshMinutes" Minimum="1" Maximum="1440" Step="1" Decimals="0" Value="10" Scale="1" />
+    <Parameter Key="news.slide" Label="ニュース切替" Unit="秒" Target="kind:News" Property="SlideSeconds" Minimum="3" Maximum="300" Step="1" Decimals="0" Value="10" Scale="1" />
+  </HostParameters>
+</DashboardScene>
